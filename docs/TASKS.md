@@ -9,4 +9,4 @@
 | 005 | LiveReader architecture | Done | 76c5746 |
 | 006 | Dashboard Synchronization & Diagnostics Foundation | Done | ae6ed93 |
 | 007 | Diagnostics Expansion | Done | 0b445dc |
-| 008 | Debug Bundle Export | Done | pending |
+| 008 | Debug Bundle Export | Done | c2d6331 |
