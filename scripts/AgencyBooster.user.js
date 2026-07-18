@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AgencyBooster Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.5.4
-// @description  Enterprise-grade management utility for AgencyBooster. Dashboard Accuracy Fix.
+// @version      1.5.5
+// @description  Enterprise-grade management utility for AgencyBooster. Snippet Import.
 // @author       Senior Staff JavaScript Engineer
 // @match        https://goldenbride.net/*
 // @grant        none
@@ -35,7 +35,7 @@
         MAX_STORAGE_WARNING_BYTES: 4000000,
         BYTES_PER_KB: 1024,
         SNAPSHOT_VERSION: "1.0",
-            DIAGNOSTICS_VERSION: "1.5.4",
+            DIAGNOSTICS_VERSION: "1.5.5",
         DELAY_PROPERTIES: ["intervalSeconds", "delay", "interval", "timeout", "seconds"],
         SELECTORS: {
             START: "start",
@@ -51,7 +51,10 @@
             OP_FAILED: "Operation failed. State rolled back.",
             IMPORT_EMPTY: "Error: No valid snippets found.",
             FILE_READ_ERROR: "Failed to read the file.",
-            BACKUP_FAILED: "Backup failed: storage is full. Old backups were removed, but there is still not enough space."
+            BACKUP_FAILED: "Backup failed: storage is full. Old backups were removed, but there is still not enough space.",
+            IMPORT_JSON_INVALID: "Invalid JSON structure. Expected {\"private\": [...], \"broadcast\": [...]} or a flat array of snippets.",
+            IMPORT_CANCELLED: "Import cancelled. No changes were made.",
+            IMPORT_UNSUPPORTED: "Unsupported file type. Please select a .txt or .json file."
         }
     };
 
@@ -537,6 +540,190 @@
         }
     };
 
+    const SnippetImporter = {
+        _importHistory: [],
+        _maxHistory: 10,
+
+        parseJSON: (rawText) => {
+            const result = { private: [], broadcast: [], errors: [] };
+            try {
+                const parsed = JSON.parse(rawText);
+                if (Array.isArray(parsed)) {
+                    for (let i = 0; i < parsed.length; i++) {
+                        const item = parsed[i];
+                        if (typeof item === "string" && item.trim()) {
+                            result.private.push(item.trim());
+                        } else if (item && typeof item === "object" && typeof item.text === "string" && item.text.trim()) {
+                            result.private.push(item.text.trim());
+                        } else {
+                            result.errors.push(`Row ${i + 1}: invalid snippet format`);
+                        }
+                    }
+                    return result;
+                }
+                if (parsed && typeof parsed === "object") {
+                    if (Array.isArray(parsed.private)) {
+                        for (let i = 0; i < parsed.private.length; i++) {
+                            const item = parsed.private[i];
+                            if (typeof item === "string" && item.trim()) {
+                                result.private.push(item.trim());
+                            } else if (item && typeof item === "object" && typeof item.text === "string" && item.text.trim()) {
+                                result.private.push(item.text.trim());
+                            } else {
+                                result.errors.push(`private[${i + 1}]: invalid snippet format`);
+                            }
+                        }
+                    }
+                    if (Array.isArray(parsed.broadcast)) {
+                        for (let i = 0; i < parsed.broadcast.length; i++) {
+                            const item = parsed.broadcast[i];
+                            if (typeof item === "string" && item.trim()) {
+                                result.broadcast.push(item.trim());
+                            } else if (item && typeof item === "object" && typeof item.text === "string" && item.text.trim()) {
+                                result.broadcast.push(item.text.trim());
+                            } else {
+                                result.errors.push(`broadcast[${i + 1}]: invalid snippet format`);
+                            }
+                        }
+                    }
+                    if (result.private.length === 0 && result.broadcast.length === 0 && result.errors.length === 0) {
+                        result.errors.push(CONFIG.TEXT.IMPORT_JSON_INVALID);
+                    }
+                    return result;
+                }
+                result.errors.push(CONFIG.TEXT.IMPORT_JSON_INVALID);
+            } catch (e) {
+                result.errors.push(`JSON parse error: ${e.message}`);
+            }
+            return result;
+        },
+
+        detectFileType: (fileName) => {
+            if (!fileName) return "unknown";
+            const ext = fileName.split(".").pop().toLowerCase();
+            if (ext === "json") return "json";
+            if (ext === "txt") return "txt";
+            return "unknown";
+        },
+
+        parseFile: (rawText, fileType) => {
+            if (fileType === "json") return SnippetImporter.parseJSON(rawText);
+            if (fileType === "txt") return SnippetManager.parseText(rawText);
+            return { private: [], broadcast: [], errors: [CONFIG.TEXT.IMPORT_UNSUPPORTED] };
+        },
+
+        _getExistingTexts: (messages) => {
+            if (!messages || typeof messages !== "object") return new Set();
+            const texts = new Set();
+            const textProp = SnippetManager.detectTextProperty(messages);
+            for (const msg of Object.values(messages)) {
+                if (msg && typeof msg === "object" && typeof msg[textProp] === "string") {
+                    texts.add(msg[textProp].trim());
+                }
+            }
+            return texts;
+        },
+
+        detectDuplicates: (parsed, existingData) => {
+            const existingPriv = SnippetImporter._getExistingTexts(existingData?.messages);
+            const existingBroad = SnippetImporter._getExistingTexts(existingData?.broadcast?.messages);
+            const seenPriv = new Set();
+            const seenBroad = new Set();
+            const result = { duplicates: 0, uniquePrivate: [], uniqueBroadcast: [] };
+
+            for (const snippet of parsed.private) {
+                if (existingPriv.has(snippet) || seenPriv.has(snippet)) {
+                    result.duplicates++;
+                } else {
+                    seenPriv.add(snippet);
+                    result.uniquePrivate.push(snippet);
+                }
+            }
+            for (const snippet of parsed.broadcast) {
+                if (existingBroad.has(snippet) || seenBroad.has(snippet)) {
+                    result.duplicates++;
+                } else {
+                    seenBroad.add(snippet);
+                    result.uniqueBroadcast.push(snippet);
+                }
+            }
+            return result;
+        },
+
+        buildPreview: (parsed, deduped, existingData) => {
+            const existingPrivCount = existingData?.messages ? Object.keys(existingData.messages).length : 0;
+            const existingBroadCount = existingData?.broadcast?.messages ? Object.keys(existingData.broadcast.messages).length : 0;
+            return {
+                parseErrors: parsed.errors.length,
+                parseErrorDetails: parsed.errors,
+                totalParsed: parsed.private.length + parsed.broadcast.length,
+                duplicatesSkipped: deduped.duplicates,
+                privateWillImport: deduped.uniquePrivate.length,
+                broadcastWillImport: deduped.uniqueBroadcast.length,
+                existingPrivateCount: existingPrivCount,
+                existingBroadcastCount: existingBroadCount,
+                hasErrors: parsed.errors.length > 0
+            };
+        },
+
+        recordImport: (stats) => {
+            SnippetImporter._importHistory.push({
+                timestamp: Utils.getTimestamp(),
+                imported: stats.imported,
+                duplicates: stats.duplicates,
+                invalid: stats.invalid,
+                status: stats.status
+            });
+            if (SnippetImporter._importHistory.length > SnippetImporter._maxHistory) {
+                SnippetImporter._importHistory.shift();
+            }
+        },
+
+        getImportHistory: () => [...SnippetImporter._importHistory],
+
+        executeImport: async (profileKey, deduped) => {
+            const dPriv = deduped.uniquePrivate;
+            const dBroad = deduped.uniqueBroadcast;
+            const totalToImport = dPriv.length + dBroad.length;
+            if (totalToImport === 0) return { imported: 0, duplicates: 0, invalid: 0, status: "nothing_to_import" };
+
+            const ok = await StorageManager.runTransaction(profileKey, async (data) => {
+                if (dPriv.length > 0) {
+                    const privDelay = StateManager.getDelayValue(data, "icebreaker");
+                    const dVal = privDelay !== CONFIG.TEXT.UNKNOWN ? privDelay : CONFIG.DEFAULT_DELAY;
+                    const existingTexts = SnippetImporter._getExistingTexts(data.messages);
+                    const existingTextArr = [...existingTexts];
+                    data.messages = SnippetManager.buildMessages(
+                        [...existingTextArr, ...dPriv],
+                        data.messages,
+                        dVal
+                    );
+                }
+                if (dBroad.length > 0) {
+                    if (!data.broadcast) data.broadcast = {};
+                    const brDelay = StateManager.getDelayValue(data, "broadcast");
+                    const dVal = brDelay !== CONFIG.TEXT.UNKNOWN ? brDelay : CONFIG.DEFAULT_DELAY;
+                    const existingTexts = SnippetImporter._getExistingTexts(data.broadcast?.messages);
+                    const existingTextArr = [...existingTexts];
+                    data.broadcast.messages = SnippetManager.buildMessages(
+                        [...existingTextArr, ...dBroad],
+                        data.broadcast.messages,
+                        dVal
+                    );
+                }
+                return true;
+            });
+
+            const imported = ok ? totalToImport : 0;
+            return {
+                imported,
+                duplicates: deduped.duplicates,
+                invalid: 0,
+                status: ok ? "success" : "failed"
+            };
+        }
+    };
+
     const Diagnostics = {
         _countBackups: () => {
             let count = 0;
@@ -557,6 +744,7 @@
             if (typeof ResetManager !== "undefined") modules.push("ResetManager");
             if (typeof DelayManager !== "undefined") modules.push("DelayManager");
             if (typeof SnippetManager !== "undefined") modules.push("SnippetManager");
+            if (typeof SnippetImporter !== "undefined") modules.push("SnippetImporter");
             if (typeof DOMScanner !== "undefined") modules.push("DOMScanner");
             if (typeof Validator !== "undefined") modules.push("Validator");
             if (typeof CustomUI !== "undefined") modules.push("CustomUI");
@@ -681,6 +869,23 @@
                     "Profile valid": isProfileValid ? "Yes" : "No",
                     "Overall health": isProfileValid && (live.startBtn.value || live.stopBtn.value) ? "Healthy" : "Attention Required"
                 },
+                "IMPORT HISTORY": (() => {
+                    const history = SnippetImporter.getImportHistory();
+                    if (history.length === 0) return { "Status": "No imports performed" };
+                    const last = history[history.length - 1];
+                    const section = {
+                        "Last import time": last.timestamp,
+                        "Last import status": last.status,
+                        "Last imported count": last.imported,
+                        "Last duplicate count": last.duplicates,
+                        "Last invalid count": last.invalid,
+                        "Total imports": history.length
+                    };
+                    history.forEach((entry, i) => {
+                        section[`Import #${i + 1}`] = `[${entry.timestamp}] ${entry.status} — imported: ${entry.imported}, dupes: ${entry.duplicates}, invalid: ${entry.invalid}`;
+                    });
+                    return section;
+                })(),
                 "ERROR LOG": errorSummary,
                 "ERROR HISTORY": recentErrors.length > 0
                     ? recentErrors.map((err, i) => ({
@@ -790,7 +995,17 @@ Profile valid       : ${diagObj.RUNTIME["Profile valid"]}
 Overall health      : ${diagObj.RUNTIME["Overall health"]}
 
 ----------------------------------------
-7. ERROR LOG
+7. IMPORT HISTORY
+----------------------------------------
+Last import time    : ${diagObj["IMPORT HISTORY"]["Last import time"] || "N/A"}
+Last import status  : ${diagObj["IMPORT HISTORY"]["Last import status"] || "N/A"}
+Last imported       : ${diagObj["IMPORT HISTORY"]["Last imported count"] ?? "N/A"}
+Last duplicates     : ${diagObj["IMPORT HISTORY"]["Last duplicate count"] ?? "N/A"}
+Last invalid        : ${diagObj["IMPORT HISTORY"]["Last invalid count"] ?? "N/A"}
+Total imports       : ${diagObj["IMPORT HISTORY"]["Total imports"] ?? 0}
+
+----------------------------------------
+8. ERROR LOG
 ----------------------------------------
 Error count         : ${diagObj["ERROR LOG"]["Error count"]}
 ${diagObj["ERROR LOG"]["Status"] ? `Status              : ${diagObj["ERROR LOG"]["Status"]}` : `Last error          : ${diagObj["ERROR LOG"]["Last error message"]}`}
@@ -903,6 +1118,14 @@ ${errorLines}
                     brInProgress: { value: live.brInProgress.value, source: live.brInProgress.source, confidence: live.brInProgress.confidence },
                     brCompleted: { value: live.brCompleted.value, source: live.brCompleted.source, confidence: live.brCompleted.confidence }
                 },
+                importHistory: (() => {
+                    const history = SnippetImporter.getImportHistory();
+                    return {
+                        totalImports: history.length,
+                        lastImport: history.length > 0 ? history[history.length - 1] : null,
+                        history: history
+                    };
+                })(),
                 errors: {
                     count: recentErrors.length,
                     lastError: lastError ? { message: lastError.message, detail: lastError.detail, timestamp: lastError.timestamp } : null,
@@ -1641,7 +1864,7 @@ ${errorLines}
                     Change Delays
                 </button>
                 <div style="border-top:1px solid var(--ab-border); margin: 8px 0;"></div>
-                <input type="file" id="ab-file-import" accept=".txt" style="display:none;" />
+                <input type="file" id="ab-file-import" accept=".txt,.json" style="display:none;" />
                 <button class="ab-btn" id="ab-action-import">
                     <svg style="width:16px;height:16px;fill:currentColor" viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
                     Import Snippets
@@ -1817,43 +2040,72 @@ ${errorLines}
             const pk = CustomUI.activeProfileKey;
             if (!await App.processOperation(pk, "")) return;
 
+            const fileType = SnippetImporter.detectFileType(file.name);
+            if (fileType === "unknown") {
+                await CustomUI.showAlert(CONFIG.TEXT.IMPORT_UNSUPPORTED);
+                return;
+            }
+
             const reader = new FileReader();
             reader.onload = async (ev) => {
                 const rawText = ev.target.result;
-                const parsed = SnippetManager.parseText(rawText);
-                
+                const parsed = SnippetImporter.parseFile(rawText, fileType);
+
                 if (parsed.private.length === 0 && parsed.broadcast.length === 0) {
-                    await CustomUI.showAlert(CONFIG.TEXT.IMPORT_EMPTY);
+                    const errDetail = parsed.errors.length > 0 ? `<br><br><strong>Errors:</strong><br>${parsed.errors.join("<br>")}` : "";
+                    await CustomUI.showAlert(CONFIG.TEXT.IMPORT_EMPTY + errDetail);
+                    SnippetImporter.recordImport({ imported: 0, duplicates: 0, invalid: parsed.errors.length, status: "empty" });
                     return;
                 }
 
-                const ok = await StorageManager.runTransaction(pk, async (data) => {
-                    if (parsed.private.length > 0) {
-                        const privDelay = StateManager.getDelayValue(data, 'icebreaker');
-                        const dVal = privDelay !== CONFIG.TEXT.UNKNOWN ? privDelay : CONFIG.DEFAULT_DELAY;
-                        data.messages = SnippetManager.buildMessages(parsed.private, data.messages, dVal);
-                    }
-                    
-                    if (parsed.broadcast.length > 0) {
-                        if (!data.broadcast) data.broadcast = {};
-                        const brDelay = StateManager.getDelayValue(data, 'broadcast');
-                        const dVal = brDelay !== CONFIG.TEXT.UNKNOWN ? brDelay : CONFIG.DEFAULT_DELAY;
-                        data.broadcast.messages = SnippetManager.buildMessages(parsed.broadcast, data.broadcast.messages, dVal);
-                    }
-                    return true;
-                });
-                
-                if (ok) {
-                    await CustomUI.showAlert(`<strong>Imported:</strong><br>Private: ${parsed.private.length}<br>Broadcast: ${parsed.broadcast.length}`);
+                const existingData = StorageManager.readProfile(pk) || {};
+                const deduped = SnippetImporter.detectDuplicates(parsed, existingData);
+                const preview = SnippetImporter.buildPreview(parsed, deduped, existingData);
+
+                const previewLines = [];
+                previewLines.push(`<strong>Import Preview (${fileType.toUpperCase()}):</strong>`);
+                previewLines.push(``);
+                previewLines.push(`Total parsed: ${preview.totalParsed}`);
+                previewLines.push(`Private to import: ${preview.privateWillImport}`);
+                previewLines.push(`Broadcast to import: ${preview.broadcastWillImport}`);
+                if (preview.duplicatesSkipped > 0) {
+                    previewLines.push(`<span style="color:var(--ab-warning)">Duplicates skipped: ${preview.duplicatesSkipped}</span>`);
+                }
+                if (preview.parseErrors > 0) {
+                    previewLines.push(`<span style="color:var(--ab-danger)">Parse errors: ${preview.parseErrors}</span>`);
+                }
+                previewLines.push(``);
+                previewLines.push(`<strong>Existing:</strong> Private: ${preview.existingPrivateCount} | Broadcast: ${preview.existingBroadcastCount}`);
+                previewLines.push(``);
+                previewLines.push(`Proceed with import?`);
+
+                const confirmed = await CustomUI.showConfirm(previewLines.join("<br>"));
+                if (!confirmed) {
+                    SnippetImporter.recordImport({ imported: 0, duplicates: deduped.duplicates, invalid: parsed.errors.length, status: "cancelled" });
+                    return;
+                }
+
+                const stats = await SnippetImporter.executeImport(pk, deduped);
+                stats.invalid = parsed.errors.length;
+
+                SnippetImporter.recordImport(stats);
+
+                if (stats.status === "success") {
+                    await CustomUI.showAlert(
+                        `<strong>Import Complete:</strong><br>` +
+                        `Imported: ${stats.imported}<br>` +
+                        `Duplicates: ${stats.duplicates}<br>` +
+                        `Invalid: ${stats.invalid}`
+                    );
                 } else {
                     await CustomUI.showAlert(CONFIG.TEXT.OP_FAILED);
                 }
             };
-            
+
             reader.onerror = async () => {
                 await CustomUI.showAlert(CONFIG.TEXT.FILE_READ_ERROR);
             };
-            
+
             reader.readAsText(file, "UTF-8");
         },
 

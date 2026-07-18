@@ -11,3 +11,4 @@
 | 007 | Diagnostics Expansion | Done | 0b445dc |
 | 008 | Debug Bundle Export | Done | c2d6331 |
 | 009 | Dashboard Accuracy | Done | 266b7c9 |
+| 010 | Snippet Import | Done | (pending) |

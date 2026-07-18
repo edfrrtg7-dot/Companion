@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.5
+
+Snippet Import — full import functionality with JSON/TXT support, preview, validation, and diagnostics.
+
+- Added `SnippetImporter` module with complete import workflow
+- JSON import supports flat arrays, `{private: [], broadcast: []}` format, and `{text: "..."}` object entries
+- TXT import uses existing `# PRIVATE` / `# BROADCAST` section markers
+- File type auto-detected from extension (`.json` or `.txt`)
+- Duplicate detection against existing snippets before import
+- Preview modal shows import statistics (parsed, duplicates, invalid) with confirm/cancel
+- Atomic import via `StorageManager.runTransaction` — existing snippets remain unchanged on failure
+- Import history tracking (last 10 imports) with timestamp, counts, and status
+- Diagnostics: new IMPORT HISTORY section in object, text report, and debug bundle
+- Module detection list updated to include `SnippetImporter`
+- Version bumped from 1.5.4 to 1.5.5
+
 ## v1.5.4
 
 Dashboard Accuracy Fix — delay resolution, display improvements, diagnostics enrichment.
