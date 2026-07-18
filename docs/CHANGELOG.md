@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.2
+
+Diagnostics Expansion — detailed runtime and environment data.
+
+- Logger now collects recent errors (up to 20) with timestamps for diagnostics
+- SYSTEM section: added Platform, Cookie Enabled, Online
+- PROFILE section: added Status (raw), Broadcast status (raw)
+- STORAGE section: added Storage usage (bytes), Storage limit, Storage used %, Profile size (bytes), localStorage keys
+- DOM section: added Start/Stop button source
+- RUNTIME section: added Last known IB/BR status, Last known IB/BR delay, Stop wait timeout, Stop required ticks, Default delay, Module count, Profile valid
+- Added ERROR LOG section with error count, last error details
+- Added ERROR HISTORY section with full error list (timestamp, message, detail)
+- Text report expanded to 7 sections with all new fields
+- Dashboard and LiveReader behavior unchanged
+- Version bumped from 1.5.1 to 1.5.2
+
 ## v1.5.1
 
 Dashboard Synchronization & Diagnostics Foundation.

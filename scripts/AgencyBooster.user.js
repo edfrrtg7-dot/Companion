@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AgencyBooster Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.5.1
+// @version      1.5.2
 // @description  Enterprise-grade management utility for AgencyBooster. LiveReader Phase.
 // @author       Senior Staff JavaScript Engineer
 // @match        https://goldenbride.net/*
@@ -35,7 +35,7 @@
         MAX_STORAGE_WARNING_BYTES: 4000000,
         BYTES_PER_KB: 1024,
         SNAPSHOT_VERSION: "1.0",
-        DIAGNOSTICS_VERSION: "1.5.1",
+        DIAGNOSTICS_VERSION: "1.5.2",
         DELAY_PROPERTIES: ["intervalSeconds", "delay", "interval", "timeout", "seconds"],
         SELECTORS: {
             START: "start",
@@ -57,6 +57,8 @@
     // 3. MODULES WITH STRICT PUBLIC APIS
 
     const Logger = {
+        _recentErrors: [],
+        _maxErrors: 20,
         info: (msg, data = "") => {
             if (CONFIG.DEBUG) console.log(`[AgencyBooster:INFO] ${msg}`, data);
         },
@@ -64,8 +66,18 @@
             if (CONFIG.DEBUG) console.warn(`[AgencyBooster:WARN] ${msg}`, data);
         },
         error: (msg, e = "") => {
-            console.error(`[AgencyBooster:ERROR] ${msg}`, e instanceof Error ? e.message : e);
-        }
+            const detail = e instanceof Error ? e.message : String(e);
+            console.error(`[AgencyBooster:ERROR] ${msg}`, detail);
+            Logger._recentErrors.push({
+                timestamp: new Date().toISOString(),
+                message: msg,
+                detail: detail
+            });
+            if (Logger._recentErrors.length > Logger._maxErrors) {
+                Logger._recentErrors.shift();
+            }
+        },
+        getRecentErrors: () => [...Logger._recentErrors]
     };
 
     const Utils = {
@@ -538,6 +550,8 @@
             if (typeof SnippetManager !== "undefined") modules.push("SnippetManager");
             if (typeof DOMScanner !== "undefined") modules.push("DOMScanner");
             if (typeof Validator !== "undefined") modules.push("Validator");
+            if (typeof CustomUI !== "undefined") modules.push("CustomUI");
+            if (typeof App !== "undefined") modules.push("App");
             return modules;
         },
         getDiagnosticsObj: (profileKey, allProfiles) => {
@@ -553,10 +567,13 @@
             const isProfileValid = Validator.isValidProfile(data);
             const loadedModules = Diagnostics._detectLoadedModules();
             const isSenderRunning = !SenderManager.isStopped();
+            const recentErrors = Logger.getRecentErrors();
 
             const ibMsgCount = data.messages ? Object.keys(data.messages).length : 0;
             const brMsgCount = data.broadcast?.messages ? Object.keys(data.broadcast.messages).length : 0;
             const chainSize = data.chainProgress ? Object.keys(data.chainProgress).length : 0;
+            const deliveredCount = data.delivered ? data.delivered.split(';').filter(Boolean).length : 0;
+            const sendedCount = data.sended ? data.sended.split(';').filter(Boolean).length : 0;
 
             const dashboardFields = ["ibStatus", "brStatus", "privDelay", "broadDelay", "ibInProgress", "ibCompleted", "brInProgress", "brCompleted"];
             const liveReaderSection = {};
@@ -567,6 +584,19 @@
                 liveReaderSection[`${field} confidence`] = r.confidence;
             }
 
+            const storagePercent = totalStorageSize > 0 ? ((totalStorageSize / CONFIG.MAX_STORAGE_WARNING_BYTES) * 100).toFixed(1) : "0.0";
+
+            const errorSummary = {};
+            if (recentErrors.length > 0) {
+                errorSummary["Error count"] = recentErrors.length;
+                errorSummary["Last error message"] = recentErrors[recentErrors.length - 1].message;
+                errorSummary["Last error detail"] = recentErrors[recentErrors.length - 1].detail;
+                errorSummary["Last error timestamp"] = recentErrors[recentErrors.length - 1].timestamp;
+            } else {
+                errorSummary["Error count"] = 0;
+                errorSummary["Status"] = "No errors recorded";
+            }
+
             return {
                 "SYSTEM": {
                     "AgencyBooster Version": `v${CONFIG.DIAGNOSTICS_VERSION}`,
@@ -575,7 +605,10 @@
                     "URL": Utils.getCurrentURL(),
                     "Timestamp": Utils.getTimestamp(),
                     "UserAgent": navigator.userAgent,
-                    "Viewport": `${window.innerWidth}x${window.innerHeight}`
+                    "Viewport": `${window.innerWidth}x${window.innerHeight}`,
+                    "Platform": navigator.platform || CONFIG.TEXT.UNKNOWN,
+                    "Cookie Enabled": navigator.cookieEnabled ? "Yes" : "No",
+                    "Online": navigator.onLine ? "Yes" : "No"
                 },
                 "PROFILE": {
                     "Profile ID": id || CONFIG.TEXT.UNKNOWN,
@@ -583,23 +616,32 @@
                     "Messages (private)": ibMsgCount,
                     "Messages (broadcast)": brMsgCount,
                     "Chain progress entries": chainSize,
-                    "Delivered entries": data.delivered ? data.delivered.split(';').filter(Boolean).length : 0,
-                    "Sended entries": data.sended ? data.sended.split(';').filter(Boolean).length : 0,
+                    "Delivered entries": deliveredCount,
+                    "Sended entries": sendedCount,
+                    "Status (raw)": data.status || CONFIG.TEXT.UNKNOWN,
+                    "Broadcast status (raw)": data.broadcast?.status || CONFIG.TEXT.UNKNOWN,
                     "Valid": isProfileValid ? "Yes" : "No"
                 },
                 "STORAGE": {
                     "Storage usage": `${(totalStorageSize / CONFIG.BYTES_PER_KB).toFixed(2)} KB`,
+                    "Storage usage (bytes)": totalStorageSize,
+                    "Storage limit": `${(CONFIG.MAX_STORAGE_WARNING_BYTES / CONFIG.BYTES_PER_KB / CONFIG.BYTES_PER_KB).toFixed(1)} MB`,
+                    "Storage used %": `${storagePercent}%`,
+                    "Storage health": totalStorageSize < CONFIG.MAX_STORAGE_WARNING_BYTES ? "OK" : "Warning",
                     "Profile size": `${(profileSize / CONFIG.BYTES_PER_KB).toFixed(2)} KB`,
+                    "Profile size (bytes)": profileSize,
                     "Backup count": backupCount,
                     "Active profile key": profileKey || CONFIG.TEXT.UNKNOWN,
-                    "Total profiles": allProfiles.length > 0 ? allProfiles.length : 0,
+                    "Total profiles": allProfiles.length,
                     "All profiles": allProfiles.length > 0 ? allProfiles.join(", ") : "None",
-                    "Storage health": totalStorageSize < CONFIG.MAX_STORAGE_WARNING_BYTES ? "OK" : "Warning"
+                    "localStorage keys": (() => { try { return localStorage.length; } catch { return CONFIG.TEXT.UNKNOWN; } })()
                 },
                 "LIVE READER": liveReaderSection,
                 "DOM": {
                     "Start button": live.startBtn.value ? "Detected" : "Not detected",
                     "Stop button": live.stopBtn.value ? "Detected" : "Not detected",
+                    "Start button source": live.startBtn.source,
+                    "Stop button source": live.stopBtn.source,
                     "Dashboard open": document.querySelector(".ab-modal") ? "Yes" : "No",
                     "Sender window": window === window.top ? "Top" : "Iframe",
                     "IceBreaker module": ibMsgCount > 0 ? "Loaded" : "Not loaded",
@@ -612,18 +654,41 @@
                 },
                 "RUNTIME": {
                     "Sender running": isSenderRunning ? "Yes" : "No",
+                    "Last known IB status": live.ibStatus.value,
+                    "Last known BR status": live.brStatus.value,
+                    "Last known IB delay": live.privDelay.value,
+                    "Last known BR delay": live.broadDelay.value,
                     "Dashboard poll interval": `${CONFIG.DASHBOARD_POLL_MS}ms`,
                     "Button poll interval": `${CONFIG.BUTTON_POLL_MS}ms`,
+                    "Stop wait timeout": `${CONFIG.MAX_WAIT_MS}ms`,
+                    "Stop required ticks": CONFIG.REQUIRED_STOP_TICKS,
+                    "Default delay": `${CONFIG.DEFAULT_DELAY} sec`,
                     "Loaded modules": loadedModules.join(", "),
+                    "Module count": loadedModules.length,
                     "UI hooks": (live.startBtn.value || live.stopBtn.value) ? "OK" : "Warning",
+                    "Profile valid": isProfileValid ? "Yes" : "No",
                     "Overall health": isProfileValid && (live.startBtn.value || live.stopBtn.value) ? "Healthy" : "Attention Required"
-                }
+                },
+                "ERROR LOG": errorSummary,
+                "ERROR HISTORY": recentErrors.length > 0
+                    ? recentErrors.map((err, i) => ({
+                        "#": i + 1,
+                        "Timestamp": err.timestamp,
+                        "Message": err.message,
+                        "Detail": err.detail
+                    }))
+                    : [{ "Status": "No errors recorded" }]
             };
         },
         generateTextReport: (profileKey, allProfiles) => {
             const diagObj = Diagnostics.getDiagnosticsObj(profileKey, allProfiles);
             const live = LiveReader.readAll(profileKey);
             const vs = (r) => `${r.value} [${r.source}, ${r.confidence}]`;
+            const errors = Logger.getRecentErrors();
+
+            const errorLines = errors.length > 0
+                ? errors.map((err, i) => `  ${i + 1}. [${err.timestamp}] ${err.message} — ${err.detail}`).join("\n")
+                : "  No errors recorded.";
 
             return `========================================
 AGENCYBOOSTER DEBUG REPORT
@@ -638,6 +703,9 @@ Userscript Version  : ${diagObj.SYSTEM["Userscript Version"]}
 Browser             : ${diagObj.SYSTEM["Browser"]}
 URL                 : ${diagObj.SYSTEM["URL"]}
 Viewport            : ${diagObj.SYSTEM["Viewport"]}
+Platform            : ${diagObj.SYSTEM["Platform"]}
+Cookie Enabled      : ${diagObj.SYSTEM["Cookie Enabled"]}
+Online              : ${diagObj.SYSTEM["Online"]}
 
 ----------------------------------------
 2. PROFILE
@@ -647,6 +715,10 @@ Active profile      : ${diagObj.PROFILE["Active profile"]}
 Private messages    : ${diagObj.PROFILE["Messages (private)"]}
 Broadcast messages  : ${diagObj.PROFILE["Messages (broadcast)"]}
 Chain progress      : ${diagObj.PROFILE["Chain progress entries"]} entries
+Delivered           : ${diagObj.PROFILE["Delivered entries"]} entries
+Sended              : ${diagObj.PROFILE["Sended entries"]} entries
+Status (raw)        : ${diagObj.PROFILE["Status (raw)"]}
+Broadcast (raw)     : ${diagObj.PROFILE["Broadcast status (raw)"]}
 Valid               : ${diagObj.PROFILE["Valid"]}
 
 ----------------------------------------
@@ -664,18 +736,19 @@ BR Completed        : ${vs(live.brCompleted)}
 ----------------------------------------
 4. STORAGE
 ----------------------------------------
-Usage               : ${diagObj.STORAGE["Storage usage"]}
+Usage               : ${diagObj.STORAGE["Storage usage"]} (${diagObj.STORAGE["Storage used %"]} of limit)
+Storage health      : ${diagObj.STORAGE["Storage health"]}
 Profile size        : ${diagObj.STORAGE["Profile size"]}
 Backups             : ${diagObj.STORAGE["Backup count"]}
 Total profiles      : ${diagObj.STORAGE["Total profiles"]}
 All profiles        : ${diagObj.STORAGE["All profiles"]}
-Health              : ${diagObj.STORAGE["Storage health"]}
+localStorage keys   : ${diagObj.STORAGE["localStorage keys"]}
 
 ----------------------------------------
 5. DOM
 ----------------------------------------
-Start button        : ${diagObj.DOM["Start button"]}
-Stop button         : ${diagObj.DOM["Stop button"]}
+Start button        : ${diagObj.DOM["Start button"]} (${diagObj.DOM["Start button source"]})
+Stop button         : ${diagObj.DOM["Stop button"]} (${diagObj.DOM["Stop button source"]})
 Dashboard open      : ${diagObj.DOM["Dashboard open"]}
 Sender window       : ${diagObj.DOM["Sender window"]}
 IceBreaker module   : ${diagObj.DOM["IceBreaker module"]}
@@ -690,11 +763,27 @@ Buttons scanned     : ${diagObj.DOM["Buttons scanned"]}
 6. RUNTIME
 ----------------------------------------
 Sender running      : ${diagObj.RUNTIME["Sender running"]}
+Last IB status      : ${diagObj.RUNTIME["Last known IB status"]}
+Last BR status      : ${diagObj.RUNTIME["Last known BR status"]}
+Last IB delay       : ${diagObj.RUNTIME["Last known IB delay"]}
+Last BR delay       : ${diagObj.RUNTIME["Last known BR delay"]}
 Dashboard poll      : ${diagObj.RUNTIME["Dashboard poll interval"]}
 Button poll         : ${diagObj.RUNTIME["Button poll interval"]}
+Stop wait timeout   : ${diagObj.RUNTIME["Stop wait timeout"]}
+Default delay       : ${diagObj.RUNTIME["Default delay"]}
 Loaded modules      : ${diagObj.RUNTIME["Loaded modules"]}
+Module count        : ${diagObj.RUNTIME["Module count"]}
 UI hooks            : ${diagObj.RUNTIME["UI hooks"]}
+Profile valid       : ${diagObj.RUNTIME["Profile valid"]}
 Overall health      : ${diagObj.RUNTIME["Overall health"]}
+
+----------------------------------------
+7. ERROR LOG
+----------------------------------------
+Error count         : ${diagObj["ERROR LOG"]["Error count"]}
+${diagObj["ERROR LOG"]["Status"] ? `Status              : ${diagObj["ERROR LOG"]["Status"]}` : `Last error          : ${diagObj["ERROR LOG"]["Last error message"]}`}
+Recent errors:
+${errorLines}
 =======================================`;
         }
     };
