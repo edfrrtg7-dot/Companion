@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AgencyBooster Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.5.6
-// @description  Enterprise-grade management utility for AgencyBooster. Finance Widget.
+// @version      1.5.7
+// @description  Enterprise-grade management utility for AgencyBooster. Dashboard & Finance stabilized.
 // @author       Senior Staff JavaScript Engineer
 // @match        https://goldenbride.net/*
 // @grant        none
@@ -35,7 +35,7 @@
         MAX_STORAGE_WARNING_BYTES: 4000000,
         BYTES_PER_KB: 1024,
         SNAPSHOT_VERSION: "1.0",
-            DIAGNOSTICS_VERSION: "1.5.6",
+            DIAGNOSTICS_VERSION: "1.5.7",
         DELAY_PROPERTIES: ["intervalSeconds", "delay", "interval", "timeout", "seconds"],
         SELECTORS: {
             START: "start",
@@ -57,9 +57,7 @@
             IMPORT_UNSUPPORTED: "Unsupported file type. Please select a .txt or .json file."
         },
         FINANCE_STORAGE_PREFIX: "agencybooster-finance-",
-        FINANCE_DEFAULT_PERIOD: "all",
-        FINANCE_URL: "/finance",
-        FINANCE_WIDGET_SIZE: { WIDTH: 280, COLLAPSED_HEIGHT: 40, EXPANDED_HEIGHT: 260 }
+        FINANCE_WIDGET_SIZE: { WIDTH: 280, COLLAPSED_HEIGHT: 40, EXPANDED_HEIGHT: 300 }
     };
 
     // 3. MODULES WITH STRICT PUBLIC APIS
@@ -730,6 +728,7 @@
 
     const FinanceManager = {
         _cache: null,
+        _SHIFT_KEY: "agencybooster-finance-shift",
 
         _read(key) {
             try {
@@ -751,12 +750,13 @@
                 y: null,
                 collapsed: false,
                 closed: false,
-                period: CONFIG.FINANCE_DEFAULT_PERIOD,
                 lastRefresh: null,
                 lastDuration: null,
                 lastStatus: null,
                 credits: null,
-                transactions: null
+                transactions: [],
+                parseMethod: null,
+                failureReason: null
             };
         },
 
@@ -768,64 +768,40 @@
             return this._write("widget-state", state);
         },
 
-        getPeriods() {
-            return [
-                { value: "today", label: "Today" },
-                { value: "week", label: "This Week" },
-                { value: "month", label: "This Month" },
-                { value: "all", label: "All Time" }
-            ];
+        getShiftPeriod() {
+            try {
+                const raw = localStorage.getItem(this._SHIFT_KEY);
+                return raw ? JSON.parse(raw) : null;
+            } catch { return null; }
         },
 
-        getPeriodLabel(value) {
-            return (this.getPeriods().find(p => p.value === value) || {}).label || value;
+        setShiftPeriod(start, end) {
+            try {
+                localStorage.setItem(this._SHIFT_KEY, JSON.stringify({ start, end }));
+                return true;
+            } catch { return false; }
         },
 
-        async fetchFinanceData(period) {
+        clearShiftPeriod() {
+            try {
+                localStorage.removeItem(this._SHIFT_KEY);
+                return true;
+            } catch { return false; }
+        },
+
+        async fetchFinanceData(docs) {
             const startTime = performance.now();
             try {
-                const docs = DOMManager.getAllAccessibleDocuments(window);
-                let credits = null;
-                let transactions = null;
-
-                for (const doc of docs) {
-                    try {
-                        if (credits === null) {
-                            const creditEl = doc.querySelector("[class*='credit'], [class*='balance'], [data-field='credits'], [data-field='balance']");
-                            if (creditEl) {
-                                const raw = (creditEl.textContent || "").trim();
-                                const num = parseFloat(raw.replace(/[^\d.\-]/g, ""));
-                                if (!isNaN(num)) credits = num;
-                            }
-                        }
-                        if (transactions === null) {
-                            const txRows = doc.querySelectorAll("table tbody tr, .transaction-row, [class*='transaction']");
-                            if (txRows.length > 0) {
-                                const filtered = FinanceManager._filterByPeriod(txRows, period, doc);
-                                transactions = filtered;
-                            }
-                        }
-                    } catch {}
-                    if (credits !== null && transactions !== null) break;
-                }
-
-                if (credits === null) {
-                    const allText = [];
-                    for (const doc of docs) {
-                        try { allText.push(doc.body ? doc.body.innerText : ""); } catch {}
-                    }
-                    const blob = allText.join("\n");
-                    const creditMatch = blob.match(/(?:credits?|balance)\s*[:=]?\s*([\d,.]+)/i);
-                    if (creditMatch) credits = parseFloat(creditMatch[1].replace(/,/g, ""));
-                }
-
+                const result = FinanceManager.parseFinanceFromDocs(docs);
                 const duration = Math.round(performance.now() - startTime);
                 const state = FinanceManager.readState();
-                state.credits = isNaN(credits) ? null : credits;
-                state.transactions = transactions;
+                state.credits = result.credits;
+                state.transactions = result.transactions;
+                state.parseMethod = result.parseMethod;
+                state.failureReason = result.failureReason;
                 state.lastRefresh = Utils.getTimestamp();
                 state.lastDuration = duration;
-                state.lastStatus = (credits !== null || transactions !== null) ? "ok" : "no_data";
+                state.lastStatus = (result.credits !== null || result.transactions.length > 0) ? "ok" : "no_data";
                 FinanceManager.writeState(state);
                 FinanceManager._cache = state;
                 return state;
@@ -835,6 +811,7 @@
                 state.lastRefresh = Utils.getTimestamp();
                 state.lastDuration = duration;
                 state.lastStatus = "error";
+                state.failureReason = e.message || String(e);
                 FinanceManager.writeState(state);
                 FinanceManager._cache = state;
                 Logger.error("FinanceWidget: fetch failed", e);
@@ -842,33 +819,159 @@
             }
         },
 
-        _filterByPeriod(rows, period, doc) {
-            if (period === "all") return rows.length;
-            const now = new Date();
-            let cutoff = new Date(0);
-            if (period === "today") {
-                cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            } else if (period === "week") {
-                cutoff = new Date(now);
-                cutoff.setDate(cutoff.getDate() - 7);
-            } else if (period === "month") {
-                cutoff = new Date(now);
-                cutoff.setMonth(cutoff.getMonth() - 1);
-            }
-            let count = 0;
-            for (const row of rows) {
+        parseFinanceFromDocs(docs) {
+            let credits = null;
+            let transactions = [];
+            let parseMethod = "none";
+            let failureReason = null;
+
+            try {
+                const result = FinanceManager._parseStructuredTable(docs);
+                if (result.credits !== null || result.transactions.length > 0) {
+                    credits = result.credits;
+                    transactions = result.transactions;
+                    parseMethod = "structured";
+                }
+            } catch (e) { failureReason = "structured: " + e.message; }
+
+            if (parseMethod === "none") {
                 try {
-                    const text = (row.textContent || "").replace(/\s+/g, " ").trim();
-                    const dateMatch = text.match(/(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/);
-                    if (dateMatch) {
-                        const parsed = new Date(dateMatch[1]);
-                        if (!isNaN(parsed) && parsed >= cutoff) count++;
-                    } else {
-                        count++;
+                    const result = FinanceManager._parseDOMSelectors(docs);
+                    if (result.credits !== null || result.transactions.length > 0) {
+                        credits = result.credits;
+                        transactions = result.transactions;
+                        parseMethod = "dom";
                     }
-                } catch { count++; }
+                } catch (e) { failureReason = "dom: " + e.message; }
             }
-            return count;
+
+            if (parseMethod === "none") {
+                try {
+                    const result = FinanceManager._parseTextFallback(docs);
+                    if (result.credits !== null) {
+                        credits = result.credits;
+                        parseMethod = "text";
+                    }
+                } catch (e) { failureReason = "text: " + e.message; }
+            }
+
+            const shift = FinanceManager.getShiftPeriod();
+            if (shift && shift.start && shift.end && transactions.length > 0) {
+                transactions = FinanceManager._filterByShiftPeriod(transactions, shift);
+            }
+
+            transactions = transactions.slice(-5);
+
+            return { credits, transactions, parseMethod, failureReason };
+        },
+
+        _parseStructuredTable(docs) {
+            let credits = null;
+            const transactions = [];
+
+            for (const doc of docs) {
+                try {
+                    if (credits === null) {
+                        const creditEl = doc.querySelector("[class*='credit'], [class*='balance'], [data-field='credits'], [data-field='balance']");
+                        if (creditEl) {
+                            const raw = (creditEl.textContent || "").trim();
+                            const num = parseFloat(raw.replace(/[^\d.\-]/g, ""));
+                            if (!isNaN(num)) credits = num;
+                        }
+                    }
+
+                    const rows = doc.querySelectorAll("table tbody tr");
+                    for (const row of rows) {
+                        const cells = row.querySelectorAll("td");
+                        if (cells.length < 2) continue;
+                        const texts = Array.from(cells).map(c => (c.textContent || "").trim());
+                        const tx = FinanceManager._parseTransactionCells(texts);
+                        if (tx) transactions.push(tx);
+                    }
+                } catch {}
+                if (credits !== null && transactions.length > 0) break;
+            }
+
+            return { credits, transactions };
+        },
+
+        _parseDOMSelectors(docs) {
+            let credits = null;
+            const transactions = [];
+
+            for (const doc of docs) {
+                try {
+                    if (credits === null) {
+                        const creditEl = doc.querySelector("[class*='credit'], [class*='balance'], [data-field='credits'], [data-field='balance']");
+                        if (creditEl) {
+                            const raw = (creditEl.textContent || "").trim();
+                            const num = parseFloat(raw.replace(/[^\d.\-]/g, ""));
+                            if (!isNaN(num)) credits = num;
+                        }
+                    }
+
+                    const txRows = doc.querySelectorAll(".transaction-row, [class*='transaction']");
+                    for (const row of txRows) {
+                        const cells = row.querySelectorAll("td, .cell, [class*='cell']");
+                        if (cells.length < 2) continue;
+                        const texts = Array.from(cells).map(c => (c.textContent || "").trim());
+                        const tx = FinanceManager._parseTransactionCells(texts);
+                        if (tx) transactions.push(tx);
+                    }
+                } catch {}
+                if (credits !== null && transactions.length > 0) break;
+            }
+
+            return { credits, transactions };
+        },
+
+        _parseTextFallback(docs) {
+            let credits = null;
+            const allText = [];
+            for (const doc of docs) {
+                try { allText.push(doc.body ? doc.body.innerText : ""); } catch {}
+            }
+            const blob = allText.join("\n");
+            const creditMatch = blob.match(/(?:credits?|balance)\s*[:=]?\s*([\d,.]+)/i);
+            if (creditMatch) credits = parseFloat(creditMatch[1].replace(/,/g, ""));
+            return { credits, transactions: [] };
+        },
+
+        _parseTransactionCells(texts) {
+            if (texts.length < 2) return null;
+            let date = "", time = "", operation = "", target = "", credits = "";
+
+            for (const text of texts) {
+                if (!text) continue;
+                if (/^\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4}$/.test(text)) {
+                    date = text;
+                } else if (/^\d{1,2}:\d{2}/.test(text)) {
+                    time = text;
+                } else if (/^[\-+]?\d+[\.,]?\d*$/.test(text.replace(/[^\d.\-+]/g, ""))) {
+                    const num = parseFloat(text.replace(/[^\d.\-]/g, ""));
+                    if (!isNaN(num)) credits = text;
+                } else {
+                    if (!operation) operation = text;
+                    else if (!target) target = text;
+                }
+            }
+
+            if (!operation && !credits) return null;
+            return { date, time, operation, target, credits };
+        },
+
+        _filterByShiftPeriod(transactions, shift) {
+            const start = new Date(shift.start);
+            const end = new Date(shift.end);
+            if (isNaN(start) || isNaN(end)) return transactions;
+
+            return transactions.filter(tx => {
+                if (!tx.date) return true;
+                try {
+                    const txDate = new Date(tx.date + (tx.time ? " " + tx.time : ""));
+                    return !isNaN(txDate) && txDate >= start && txDate <= end;
+                } catch { return true; }
+            });
         },
 
         getCachedState() {
@@ -900,6 +1003,7 @@
             if (typeof SnippetManager !== "undefined") modules.push("SnippetManager");
             if (typeof SnippetImporter !== "undefined") modules.push("SnippetImporter");
             if (typeof FinanceManager !== "undefined") modules.push("FinanceManager");
+            if (typeof DataProvider !== "undefined") modules.push("DataProvider");
             if (typeof DOMScanner !== "undefined") modules.push("DOMScanner");
             if (typeof Validator !== "undefined") modules.push("Validator");
             if (typeof CustomUI !== "undefined") modules.push("CustomUI");
@@ -1043,13 +1147,16 @@
                 })(),
                 "FINANCE": (() => {
                     const fs = FinanceManager.getCachedState();
+                    const shift = FinanceManager.getShiftPeriod();
                     return {
                         "Last refresh": fs.lastRefresh || "Never",
                         "Request duration": fs.lastDuration !== null ? `${fs.lastDuration}ms` : "N/A",
                         "Last request status": fs.lastStatus || "N/A",
-                        "Selected period": FinanceManager.getPeriodLabel(fs.period),
+                        "Parse method": fs.parseMethod || "N/A",
+                        "Parse failure": fs.failureReason || "None",
+                        "Shift period": shift && shift.start && shift.end ? `${shift.start} — ${shift.end}` : "All Time",
                         "Credits": fs.credits !== null ? fs.credits : "Not loaded",
-                        "Transactions": fs.transactions !== null ? fs.transactions : "Not loaded",
+                        "Transactions": Array.isArray(fs.transactions) ? fs.transactions.length : "Not loaded",
                         "Widget collapsed": fs.collapsed ? "Yes" : "No",
                         "Widget visible": fs.closed ? "No" : "Yes"
                     };
@@ -1178,7 +1285,9 @@ Total imports       : ${diagObj["IMPORT HISTORY"]["Total imports"] ?? 0}
 Last refresh        : ${diagObj.FINANCE["Last refresh"]}
 Request duration    : ${diagObj.FINANCE["Request duration"]}
 Last request status : ${diagObj.FINANCE["Last request status"]}
-Selected period     : ${diagObj.FINANCE["Selected period"]}
+Parse method        : ${diagObj.FINANCE["Parse method"]}
+Parse failure       : ${diagObj.FINANCE["Parse failure"]}
+Shift period        : ${diagObj.FINANCE["Shift period"]}
 Credits             : ${diagObj.FINANCE["Credits"]}
 Transactions        : ${diagObj.FINANCE["Transactions"]}
 Widget collapsed    : ${diagObj.FINANCE["Widget collapsed"]}
@@ -1308,13 +1417,16 @@ ${errorLines}
                 })(),
                 finance: (() => {
                     const fs = FinanceManager.getCachedState();
+                    const shift = FinanceManager.getShiftPeriod();
                     return {
                         lastRefresh: fs.lastRefresh,
                         lastDuration: fs.lastDuration,
                         lastStatus: fs.lastStatus,
-                        period: fs.period,
+                        parseMethod: fs.parseMethod || null,
+                        failureReason: fs.failureReason || null,
+                        shiftPeriod: shift && shift.start && shift.end ? shift : "all",
                         credits: fs.credits,
-                        transactions: fs.transactions,
+                        transactions: Array.isArray(fs.transactions) ? fs.transactions : [],
                         collapsed: fs.collapsed,
                         closed: fs.closed,
                         position: { x: fs.x, y: fs.y }
@@ -1543,8 +1655,8 @@ ${errorLines}
             }
             return LiveReader._unknownResult();
         },
-        readAll: (profileKey) => {
-            const docs = DOMManager.getAccessibleDocuments(window);
+        readAll: (profileKey, docs) => {
+            if (!docs) docs = DOMManager.getAccessibleDocuments(window);
             const providers = {
                 domDirect: LiveReader._providerDOMDirect(docs),
                 domStructured: LiveReader._providerDOMStructured(docs),
@@ -1569,6 +1681,25 @@ ${errorLines}
                 stopBtnFound ? LiveReader.CONFIDENCE.HIGH : LiveReader.CONFIDENCE.NONE
             );
             return result;
+        }
+    };
+
+    const DataProvider = {
+        _cache: null,
+        _cacheTimestamp: 0,
+        refresh(profileKey) {
+            if (this._cache && (Date.now() - this._cacheTimestamp) < CONFIG.DASHBOARD_POLL_MS) {
+                return this._cache;
+            }
+            const docs = DOMManager.getAccessibleDocuments(window);
+            const live = LiveReader.readAll(profileKey, docs);
+            this._cache = { live, docs, timestamp: Utils.getTimestamp() };
+            this._cacheTimestamp = Date.now();
+            return this._cache;
+        },
+        invalidate() {
+            this._cache = null;
+            this._cacheTimestamp = 0;
         }
     };
 
@@ -1812,25 +1943,19 @@ ${errorLines}
                 }
                 .ab-finance-header-actions button:hover { color: var(--ab-text); background: rgba(255,255,255,0.1); }
                 .ab-finance-header-actions button svg { width: 14px; height: 14px; fill: currentColor; }
-                .ab-finance-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: 1; }
+                .ab-finance-body { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; flex: 1; }
                 .ab-finance-body::-webkit-scrollbar { width: 4px; }
                 .ab-finance-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
                 .ab-finance-row { display: flex; justify-content: space-between; align-items: center; }
-                .ab-finance-label { font-size: 11px; color: var(--ab-text-dim); text-transform: uppercase; letter-spacing: 0.3px; }
-                .ab-finance-value { font-size: 13px; font-weight: 600; color: var(--ab-text); }
+                .ab-finance-label { font-size: 10px; color: var(--ab-text-dim); text-transform: uppercase; letter-spacing: 0.3px; }
+                .ab-finance-value { font-size: 12px; font-weight: 600; color: var(--ab-text); }
                 .ab-finance-value.ab-finance-accent { color: var(--ab-accent); }
                 .ab-finance-value.ab-finance-success { color: var(--ab-success); }
                 .ab-finance-value.ab-finance-warning { color: var(--ab-warning); }
-                .ab-finance-select {
-                    background: rgba(0,0,0,0.3); border: 1px solid var(--ab-border); color: var(--ab-text);
-                    padding: 4px 6px; border-radius: 4px; font-size: 11px; font-family: var(--ab-font);
-                    outline: none; cursor: pointer;
-                }
-                .ab-finance-select:focus { border-color: var(--ab-accent); }
-                .ab-finance-btn-row { display: flex; gap: 6px; margin-top: 2px; }
+                .ab-finance-btn-row { display: flex; gap: 4px; margin-top: 1px; }
                 .ab-finance-btn {
                     flex: 1; background: rgba(255,255,255,0.05); color: var(--ab-text); border: 1px solid var(--ab-border);
-                    padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 500;
+                    padding: 4px 6px; border-radius: 4px; cursor: pointer; font-size: 10px; font-weight: 500;
                     text-align: center; transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 4px;
                 }
                 .ab-finance-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
@@ -1838,9 +1963,22 @@ ${errorLines}
                 .ab-finance-btn.primary { background: var(--ab-accent); border-color: var(--ab-accent); color: #fff; }
                 .ab-finance-btn.primary:hover { background: var(--ab-accent-hover); }
                 .ab-finance-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-                .ab-finance-btn svg { width: 12px; height: 12px; fill: currentColor; }
+                .ab-finance-btn svg { width: 11px; height: 11px; fill: currentColor; }
                 .ab-finance-divider { height: 1px; background: var(--ab-border); margin: 2px 0; }
-                .ab-finance-status { font-size: 10px; color: var(--ab-text-dim); text-align: center; margin-top: 2px; }
+                .ab-finance-status { font-size: 9px; color: var(--ab-text-dim); text-align: center; margin-top: 1px; }
+                .ab-finance-tx-container { display: flex; flex-direction: column; gap: 0; }
+                .ab-finance-tx-header {
+                    display: grid; grid-template-columns: 48px 42px 1fr 60px 45px; gap: 2px;
+                    font-size: 9px; text-transform: uppercase; color: var(--ab-text-dim); letter-spacing: 0.3px;
+                    padding: 2px 0; border-bottom: 1px solid var(--ab-border);
+                }
+                .ab-finance-tx-row {
+                    display: grid; grid-template-columns: 48px 42px 1fr 60px 45px; gap: 2px;
+                    font-size: 10px; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.03);
+                    color: var(--ab-text);
+                }
+                .ab-finance-tx-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+                .ab-finance-tx-op { color: var(--ab-text-dim); }
             `;
             document.head.appendChild(style);
         },
@@ -2061,7 +2199,7 @@ ${errorLines}
         },
 
         updateDashboard: () => {
-            const live = LiveReader.readAll(CustomUI.activeProfileKey);
+            const live = DataProvider.refresh(CustomUI.activeProfileKey).live;
             const dashView = document.getElementById("ab-view-dashboard");
             if (!dashView) return;
 
@@ -2245,17 +2383,40 @@ ${errorLines}
         },
 
         _renderFinanceWidget: (widget, state) => {
-            const periodOptions = FinanceManager.getPeriods()
-                .map(p => `<option value="${p.value}" ${p.value === state.period ? "selected" : ""}>${p.label}</option>`)
-                .join("");
+            const shift = FinanceManager.getShiftPeriod();
+            const periodDisplay = shift && shift.start && shift.end
+                ? `${new Date(shift.start).toLocaleString()} — ${new Date(shift.end).toLocaleString()}`
+                : "All Time";
 
             const creditsDisplay = state.credits !== null
                 ? `<span class="ab-finance-value ab-finance-accent">${state.credits.toLocaleString()}</span>`
                 : `<span class="ab-finance-value" style="color:var(--ab-text-dim)">—</span>`;
 
-            const txDisplay = state.transactions !== null
-                ? `<span class="ab-finance-value">${state.transactions}</span>`
-                : `<span class="ab-finance-value" style="color:var(--ab-text-dim)">—</span>`;
+            const transactions = Array.isArray(state.transactions) ? state.transactions : [];
+            let txTableHtml = "";
+            if (transactions.length > 0) {
+                const rows = transactions.map(tx => `
+                    <div class="ab-finance-tx-row">
+                        <span class="ab-finance-tx-cell">${tx.date || "—"}</span>
+                        <span class="ab-finance-tx-cell">${tx.time || "—"}</span>
+                        <span class="ab-finance-tx-cell ab-finance-tx-op">${tx.operation || "—"}</span>
+                        <span class="ab-finance-tx-cell">${tx.target || "—"}</span>
+                        <span class="ab-finance-tx-cell" style="font-weight:600;color:var(--ab-accent)">${tx.credits || "—"}</span>
+                    </div>
+                `).join("");
+                txTableHtml = `
+                    <div class="ab-finance-tx-header">
+                        <span class="ab-finance-tx-cell">Date</span>
+                        <span class="ab-finance-tx-cell">Time</span>
+                        <span class="ab-finance-tx-cell">Op</span>
+                        <span class="ab-finance-tx-cell">Target</span>
+                        <span class="ab-finance-tx-cell">Cr</span>
+                    </div>
+                    ${rows}
+                `;
+            } else {
+                txTableHtml = `<div style="text-align:center;color:var(--ab-text-dim);font-size:10px;padding:6px 0;">No transactions</div>`;
+            }
 
             const lastRefreshDisplay = state.lastRefresh
                 ? new Date(state.lastRefresh).toLocaleTimeString()
@@ -2264,7 +2425,7 @@ ${errorLines}
             const statusDisplay = state.lastStatus === "ok"
                 ? `<span class="ab-finance-status" style="color:var(--ab-success)">Last refresh: ${lastRefreshDisplay}</span>`
                 : state.lastStatus === "error"
-                    ? `<span class="ab-finance-status" style="color:var(--ab-danger)">Last refresh failed</span>`
+                    ? `<span class="ab-finance-status" style="color:var(--ab-danger)">Refresh failed</span>`
                     : `<span class="ab-finance-status">Last refresh: ${lastRefreshDisplay}</span>`;
 
             const collapseIcon = state.collapsed
@@ -2290,22 +2451,22 @@ ${errorLines}
                         ${creditsDisplay}
                     </div>
                     <div class="ab-finance-row">
-                        <span class="ab-finance-label">Transactions</span>
-                        ${txDisplay}
+                        <span class="ab-finance-label">Period</span>
+                        <span class="ab-finance-value" style="font-size:10px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${periodDisplay}">${periodDisplay}</span>
+                    </div>
+                    <div class="ab-finance-btn-row">
+                        <button class="ab-finance-btn" id="ab-finance-set-period">Set</button>
+                        <button class="ab-finance-btn" id="ab-finance-clear-period">Clear</button>
                     </div>
                     <div class="ab-finance-divider"></div>
-                    <div class="ab-finance-row">
-                        <span class="ab-finance-label">Period</span>
-                        <select class="ab-finance-select" id="ab-finance-period">${periodOptions}</select>
+                    <div class="ab-finance-tx-container">
+                        ${txTableHtml}
                     </div>
+                    <div class="ab-finance-divider"></div>
                     <div class="ab-finance-btn-row">
                         <button class="ab-finance-btn primary" id="ab-finance-refresh">
                             <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
                             Refresh
-                        </button>
-                        <button class="ab-finance-btn" id="ab-finance-open">
-                            <svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
-                            Finance
                         </button>
                     </div>
                     ${statusDisplay}
@@ -2331,16 +2492,13 @@ ${errorLines}
                 widget.classList.add("ab-finance-hidden");
             };
 
-            widget.querySelector("#ab-finance-period").onchange = (e) => {
-                const s = FinanceManager.readState();
-                s.period = e.target.value;
-                FinanceManager.writeState(s);
-            };
-
             widget.querySelector("#ab-finance-refresh").onclick = () => App.handleFinanceRefresh();
 
-            widget.querySelector("#ab-finance-open").onclick = () => {
-                window.open(CONFIG.FINANCE_URL, "_blank");
+            widget.querySelector("#ab-finance-set-period").onclick = () => CustomUI.showShiftPeriodModal();
+
+            widget.querySelector("#ab-finance-clear-period").onclick = () => {
+                FinanceManager.clearShiftPeriod();
+                CustomUI.updateFinanceWidget();
             };
         },
 
@@ -2392,6 +2550,64 @@ ${errorLines}
             s.closed = false;
             FinanceManager.writeState(s);
             CustomUI.buildFinanceWidget();
+        },
+
+        showShiftPeriodModal: () => {
+            return new Promise(resolve => {
+                const existing = FinanceManager.getShiftPeriod();
+                const overlay = CustomUI.createOverlay();
+                overlay.innerHTML = `
+                    <div class="ab-modal small">
+                        <div class="ab-header">
+                            <h2>Shift Period</h2>
+                            <div class="ab-close-icon" id="ab-shift-close">
+                                <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                            </div>
+                        </div>
+                        <div class="ab-content">
+                            <div class="ab-input-group">
+                                <label>Start Date & Time</label>
+                                <input type="datetime-local" id="ab-shift-start" value="${existing && existing.start ? existing.start : ""}">
+                            </div>
+                            <div class="ab-input-group">
+                                <label>End Date & Time</label>
+                                <input type="datetime-local" id="ab-shift-end" value="${existing && existing.end ? existing.end : ""}">
+                            </div>
+                            <div class="ab-row">
+                                <button class="ab-btn primary" id="ab-shift-apply">Apply</button>
+                                <button class="ab-btn" id="ab-shift-cancel">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                document.getElementById("ab-shift-apply").onclick = () => {
+                    const start = document.getElementById("ab-shift-start").value;
+                    const end = document.getElementById("ab-shift-end").value;
+                    if (!start || !end) {
+                        CustomUI.showAlert("Both start and end are required.");
+                        return;
+                    }
+                    if (new Date(start) >= new Date(end)) {
+                        CustomUI.showAlert("Start must be before end.");
+                        return;
+                    }
+                    FinanceManager.setShiftPeriod(start, end);
+                    CustomUI.closeOverlay(overlay);
+                    CustomUI.updateFinanceWidget();
+                    resolve(true);
+                };
+
+                document.getElementById("ab-shift-cancel").onclick = () => {
+                    CustomUI.closeOverlay(overlay);
+                    resolve(false);
+                };
+
+                document.getElementById("ab-shift-close").onclick = () => {
+                    CustomUI.closeOverlay(overlay);
+                    resolve(false);
+                };
+            });
         },
 
         updateFinanceWidget: () => {
@@ -2568,9 +2784,11 @@ ${errorLines}
             const refreshBtn = document.getElementById("ab-finance-refresh");
             if (refreshBtn) {
                 refreshBtn.disabled = true;
-                refreshBtn.innerHTML = `<svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:currentColor;animation:ab-spin 1s linear infinite"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg> Loading...`;
+                refreshBtn.innerHTML = `<svg viewBox="0 0 24 24" style="width:11px;height:11px;fill:currentColor;animation:ab-spin 1s linear infinite"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg> Loading...`;
             }
-            await FinanceManager.fetchFinanceData(FinanceManager.readState().period);
+            DataProvider.invalidate();
+            const docs = DataProvider.refresh(CustomUI.activeProfileKey).docs;
+            await FinanceManager.fetchFinanceData(docs);
             CustomUI.updateFinanceWidget();
         },
 

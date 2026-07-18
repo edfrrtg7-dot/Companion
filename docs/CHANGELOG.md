@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.7
+
+Dashboard & Finance Architecture Stabilization — shared data layer, finance redesign, performance.
+
+- Added `DataProvider` module as single data source for Dashboard, Finance, and Diagnostics
+- Single DOM scan per refresh cycle, cached for one poll interval — eliminates duplicate scans
+- `LiveReader.readAll` now accepts optional `docs` parameter to share scanned documents
+- `Dashboard.updateDashboard` reads from `DataProvider` instead of calling `LiveReader` directly
+- Finance Widget redesigned: removed period dropdown and "Open Finance" button
+- Added custom shift period with Start/End Date-Time picker, stored permanently in localStorage
+- Added 3-tier finance parsing fallback: structured table → DOM selectors → text parsing
+- Finance Widget now shows latest 5 transactions in a compact grid (Date, Time, Op, Target, Cr)
+- Transaction cell parser identifies columns by content patterns (date, time, numeric, text)
+- Shift period filter applied before truncating to 5 transactions
+- Finance CSS compacted: smaller fonts, tighter spacing, transaction table grid layout
+- `FinanceManager.parseFinanceFromDocs(docs)` replaces `fetchFinanceData(period)`
+- Finance diagnostics expanded: parse method, failure reason, shift period, transaction count
+- Debug bundle finance section includes `parseMethod`, `failureReason`, `shiftPeriod`
+- Text report finance section updated with new fields
+- Removed unused `FINANCE_DEFAULT_PERIOD` and `FINANCE_URL` config constants
+- Version bumped from 1.5.6 to 1.5.7
+
 ## v1.5.6
 
 Finance Widget — lightweight floating widget for credit balance and transaction tracking.
