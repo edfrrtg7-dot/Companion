@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.4
+
+Dashboard Accuracy Fix — delay resolution, display improvements, diagnostics enrichment.
+
+- Fixed `StateManager.getDelayValue` to find the actual configured delay (most frequent non-zero value) instead of blindly picking the second message's value
+- Added `NOT_AVAILABLE` text constant; LiveReader now displays "Not Available" instead of "Unknown" when no provider has data
+- Dashboard delay cards now show "Not Available" for unavailable values instead of "Unknown"
+- Diagnostics LIVE READER section now shows `displayed` value per field (formatted as it appears in Dashboard)
+- RUNTIME section formats IB/BR delay values with " sec" suffix for consistency
+- Dashboard and LiveReader behavior unchanged
+- Version bumped from 1.5.3 to 1.5.4
+
 ## v1.5.3
 
 Debug Bundle Export — structured diagnostic data export.

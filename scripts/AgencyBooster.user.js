@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AgencyBooster Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.5.3
-// @description  Enterprise-grade management utility for AgencyBooster. LiveReader Phase.
+// @version      1.5.4
+// @description  Enterprise-grade management utility for AgencyBooster. Dashboard Accuracy Fix.
 // @author       Senior Staff JavaScript Engineer
 // @match        https://goldenbride.net/*
 // @grant        none
@@ -35,7 +35,7 @@
         MAX_STORAGE_WARNING_BYTES: 4000000,
         BYTES_PER_KB: 1024,
         SNAPSHOT_VERSION: "1.0",
-        DIAGNOSTICS_VERSION: "1.5.3",
+            DIAGNOSTICS_VERSION: "1.5.4",
         DELAY_PROPERTIES: ["intervalSeconds", "delay", "interval", "timeout", "seconds"],
         SELECTORS: {
             START: "start",
@@ -43,6 +43,7 @@
         },
         TEXT: {
             UNKNOWN: "Unknown",
+            NOT_AVAILABLE: "Not Available",
             STOP_REQUIRED: "Please stop IceBreaker and Broadcast before changing delays.",
             CONFIRM_FORCE: "Stop verification failed. Force continue?",
             INVALID_PROFILE: "Invalid profile structure.",
@@ -380,12 +381,20 @@
         getDelayValue: (data, moduleType) => {
             const target = moduleType === 'broadcast' ? data.broadcast?.messages : data.messages;
             const delayProp = DelayManager.detectDelayProperty(target);
-            if (target && Object.values(target)[1] && delayProp) {
-                return Object.values(target)[1][delayProp];
-            } else if (target && Object.values(target)[0] && delayProp) {
-                return Object.values(target)[0][delayProp];
+            if (!target || !delayProp) return CONFIG.TEXT.UNKNOWN;
+
+            const items = Object.values(target).filter(v => v && typeof v === "object");
+            if (items.length === 0) return CONFIG.TEXT.UNKNOWN;
+
+            const nonZero = items.map(v => v[delayProp]).filter(v => typeof v === "number" && v > 0);
+            if (nonZero.length > 0) {
+                const freq = {};
+                nonZero.forEach(v => { freq[v] = (freq[v] || 0) + 1; });
+                return Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0] * 1;
             }
-            return CONFIG.TEXT.UNKNOWN;
+
+            const first = items[0][delayProp];
+            return typeof first === "number" ? first : CONFIG.TEXT.UNKNOWN;
         },
         isEngineActive: (status) => {
             return status === "Running" || status === "Progress" || status === "Paused";
@@ -580,6 +589,9 @@
             for (const field of dashboardFields) {
                 const r = live[field];
                 liveReaderSection[`${field} value`] = r.value;
+                liveReaderSection[`${field} displayed`] = (field === "privDelay" || field === "broadDelay")
+                    ? ((r.value === CONFIG.TEXT.UNKNOWN || r.value === CONFIG.TEXT.NOT_AVAILABLE) ? CONFIG.TEXT.NOT_AVAILABLE : `${r.value} sec`)
+                    : r.value;
                 liveReaderSection[`${field} source`] = r.source;
                 liveReaderSection[`${field} confidence`] = r.confidence;
             }
@@ -656,8 +668,8 @@
                     "Sender running": isSenderRunning ? "Yes" : "No",
                     "Last known IB status": live.ibStatus.value,
                     "Last known BR status": live.brStatus.value,
-                    "Last known IB delay": live.privDelay.value,
-                    "Last known BR delay": live.broadDelay.value,
+                    "Last known IB delay": (live.privDelay.value === CONFIG.TEXT.NOT_AVAILABLE) ? CONFIG.TEXT.NOT_AVAILABLE : `${live.privDelay.value} sec`,
+                    "Last known BR delay": (live.broadDelay.value === CONFIG.TEXT.NOT_AVAILABLE) ? CONFIG.TEXT.NOT_AVAILABLE : `${live.broadDelay.value} sec`,
                     "Dashboard poll interval": `${CONFIG.DASHBOARD_POLL_MS}ms`,
                     "Button poll interval": `${CONFIG.BUTTON_POLL_MS}ms`,
                     "Stop wait timeout": `${CONFIG.MAX_WAIT_MS}ms`,
@@ -914,12 +926,13 @@ ${errorLines}
             LOW: "low",
             NONE: "none"
         },
-        _makeResult: (value, source, confidence) => ({
+        _makeResult: (value, source, confidence, raw) => ({
             value,
             source,
-            confidence
+            confidence,
+            raw: raw !== undefined ? raw : value
         }),
-        _unknownResult: () => LiveReader._makeResult(CONFIG.TEXT.UNKNOWN, LiveReader.SOURCES.UNKNOWN, LiveReader.CONFIDENCE.NONE),
+        _unknownResult: () => LiveReader._makeResult(CONFIG.TEXT.NOT_AVAILABLE, LiveReader.SOURCES.UNKNOWN, LiveReader.CONFIDENCE.NONE),
         _textFallbackRegex: /(?:status|delay|in\s*progress|completed)\s*[:=]\s*([^\n<]{1,60})/gi,
         _findLabeledValue: (docs, labelVariants) => {
             for (const doc of docs) {
@@ -1568,7 +1581,7 @@ ${errorLines}
                 const color = r.confidence === "high" ? "var(--ab-success)" : r.confidence === "medium" ? "var(--ab-accent)" : r.confidence === "low" ? "var(--ab-warning)" : "var(--ab-text-dim)";
                 return `<span style="font-size:9px;color:${color};font-weight:normal;margin-left:4px;">[${r.source}/${r.confidence}]</span>`;
             };
-            const delayStr = (r) => r.value !== CONFIG.TEXT.UNKNOWN ? `${r.value} sec` : CONFIG.TEXT.UNKNOWN;
+            const delayStr = (r) => (r.value === CONFIG.TEXT.UNKNOWN || r.value === CONFIG.TEXT.NOT_AVAILABLE) ? CONFIG.TEXT.NOT_AVAILABLE : `${r.value} sec`;
 
             dashView.innerHTML = `
                 <div class="ab-grid">
