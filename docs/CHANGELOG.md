@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.6.2
+
+Reset IceBreaker — clear `delivered` field during reset to restore original AgencyBooster sender state.
+
+- **Fixed**: `ResetManager.resetIceBreaker` — now clears `data.delivered` (guarded by `"delivered" in data`) alongside existing `chainProgress` and `sended` cleanup
+- Ensures original AgencyBooster Completed counter resets correctly after private IceBreaker chain reset
+- No changes to `getCompletedCount()`, `resetBroadcast()`, or Companion Dashboard logic
+- Version bumped to 1.6.2
+
 ## v1.6.1
 
 Runtime Source Repair — verified data sources, removed fake DOM selectors, fixed reset behavior.

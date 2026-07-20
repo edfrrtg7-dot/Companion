@@ -16,3 +16,4 @@
 | 012 | Stabilize Dashboard and Finance Architecture | Done | f776a08 |
 | 013 | Stabilize Runtime Architecture and Reset System | Done | 56a682b |
 | 014 | Runtime Source Repair | Done | a7e7839 |
+| 016 | Reset IceBreaker — clear delivered field | Done | (pending) |

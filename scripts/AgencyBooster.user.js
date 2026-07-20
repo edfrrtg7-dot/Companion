@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AgencyBooster Manager
 // @namespace    http://tampermonkey.net/
-// @version      1.6.0
+// @version      1.6.2
 // @description  Enterprise-grade management utility for AgencyBooster. Runtime mapping, reset system, dashboard recovery.
 // @author       Senior Staff JavaScript Engineer
 // @match        https://goldenbride.net/*
@@ -36,7 +36,7 @@
         MAX_STORAGE_WARNING_BYTES: 4000000,
         BYTES_PER_KB: 1024,
         SNAPSHOT_VERSION: "1.0",
-            DIAGNOSTICS_VERSION: "1.6.1",
+            DIAGNOSTICS_VERSION: "1.6.2",
         DELAY_PROPERTIES: ["intervalSeconds", "delay", "interval", "timeout", "seconds"],
         SELECTORS: {
             START: "start",
@@ -458,6 +458,9 @@
             data.chainProgress = cleanChain;
             if (data.sended) {
                 data.sended = data.sended.split(';').filter(id => id && !privateIds.has(id)).join(';');
+            }
+            if ("delivered" in data) {
+                data.delivered = "";
             }
             data.status = "stopped";
             const duration = Math.round(performance.now() - startTime);
