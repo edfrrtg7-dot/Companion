@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 Companion UI & Branding Improvements — resizable Finance widget, launcher relocation, application identity.
 
+- **Fixed**: Finance widget drag/resize now uses Pointer Events consistently — eliminates stuck drag states and event conflicts
+- **Fixed**: `setPointerCapture` ensures drag/resize continues even if pointer leaves the handle
+- **Fixed**: `pointercancel` handler prevents orphaned drag/resize state
+- **Added**: `touch-action: none` on drag and resize handles prevents browser default touch interference
 - **Added**: Finance widget is now resizable via bottom-right corner handle; dimensions persist across reloads
 - **Added**: `CONFIG.FINANCE_WIDGET_SIZE` expanded with `MIN_WIDTH`, `MIN_HEIGHT`, `MAX_WIDTH`, `MAX_HEIGHT` bounds
 - **Added**: `CONFIG.COMPANION_STORAGE_PREFIX` for Companion-specific storage

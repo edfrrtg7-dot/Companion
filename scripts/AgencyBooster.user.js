@@ -1849,13 +1849,14 @@ ${errorLines}
                     width: 16px; height: 16px; cursor: nwse-resize;
                     background: linear-gradient(135deg, transparent 50%, var(--ab-text-dim) 50%);
                     opacity: 0.3; border-radius: 0 0 10px 0; z-index: 1;
+                    touch-action: none;
                 }
                 #ab-finance-resize-handle:hover { opacity: 0.6; }
                 .ab-finance-header {
                     display: flex; align-items: center; justify-content: space-between;
                     padding: 8px 12px; cursor: grab; border-bottom: 1px solid var(--ab-border);
                     background: rgba(255,255,255,0.03); min-height: ${CONFIG.FINANCE_WIDGET_SIZE.COLLAPSED_HEIGHT}px;
-                    border-radius: 10px 10px 0 0; flex-shrink: 0;
+                    border-radius: 10px 10px 0 0; flex-shrink: 0; touch-action: none;
                 }
                 .ab-finance-header:active { cursor: grabbing; }
                 .ab-finance-header-title {
@@ -2470,7 +2471,7 @@ ${errorLines}
             let isDragging = false;
             let startX, startY, origX, origY;
 
-            const onMouseMove = (e) => {
+            const onPointerMove = (e) => {
                 if (!isDragging) return;
                 e.preventDefault();
                 const newX = origX + (e.clientX - startX);
@@ -2480,16 +2481,19 @@ ${errorLines}
                 widget.style.bottom = "auto";
             };
 
-            const onMouseUp = () => {
+            const onPointerUp = () => {
                 if (!isDragging) return;
                 isDragging = false;
                 handle.style.cursor = "grab";
-                document.removeEventListener("mousemove", onMouseMove);
-                document.removeEventListener("mouseup", onMouseUp);
+                handle.releasePointerCapture(handle.pointerId);
+                document.removeEventListener("pointermove", onPointerMove);
+                document.removeEventListener("pointerup", onPointerUp);
+                document.removeEventListener("pointercancel", onPointerUp);
             };
 
-            handle.addEventListener("mousedown", (e) => {
+            handle.addEventListener("pointerdown", (e) => {
                 if (e.target.closest("button") || e.target.closest("select")) return;
+                e.preventDefault();
                 isDragging = true;
                 startX = e.clientX;
                 startY = e.clientY;
@@ -2497,8 +2501,10 @@ ${errorLines}
                 origX = rect.left;
                 origY = rect.top;
                 handle.style.cursor = "grabbing";
-                document.addEventListener("mousemove", onMouseMove);
-                document.addEventListener("mouseup", onMouseUp);
+                handle.setPointerCapture(e.pointerId);
+                document.addEventListener("pointermove", onPointerMove);
+                document.addEventListener("pointerup", onPointerUp);
+                document.addEventListener("pointercancel", onPointerUp);
             });
         },
 
@@ -2508,7 +2514,7 @@ ${errorLines}
             let isResizing = false;
             let startX, startY, startW, startH;
 
-            const onMouseMove = (e) => {
+            const onPointerMove = (e) => {
                 if (!isResizing) return;
                 e.preventDefault();
                 const deltaW = e.clientX - startX;
@@ -2519,21 +2525,24 @@ ${errorLines}
                 widget.style.height = newH + "px";
             };
 
-            const onMouseUp = () => {
+            const onPointerUp = () => {
                 if (!isResizing) return;
                 isResizing = false;
                 handle.style.cursor = "nwse-resize";
+                handle.releasePointerCapture(handle.pointerId);
                 const rect = widget.getBoundingClientRect();
                 const s = FinanceManager.readState();
                 s.width = Math.round(rect.width);
                 s.height = Math.round(rect.height);
                 FinanceManager.writeState(s);
-                document.removeEventListener("mousemove", onMouseMove);
-                document.removeEventListener("mouseup", onMouseUp);
+                document.removeEventListener("pointermove", onPointerMove);
+                document.removeEventListener("pointerup", onPointerUp);
+                document.removeEventListener("pointercancel", onPointerUp);
             };
 
-            handle.addEventListener("mousedown", (e) => {
+            handle.addEventListener("pointerdown", (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 isResizing = true;
                 startX = e.clientX;
                 startY = e.clientY;
@@ -2541,8 +2550,10 @@ ${errorLines}
                 startW = rect.width;
                 startH = rect.height;
                 handle.style.cursor = "nwse-resize";
-                document.addEventListener("mousemove", onMouseMove);
-                document.addEventListener("mouseup", onMouseUp);
+                handle.setPointerCapture(e.pointerId);
+                document.addEventListener("pointermove", onPointerMove);
+                document.addEventListener("pointerup", onPointerUp);
+                document.addEventListener("pointercancel", onPointerUp);
             });
         },
 
