@@ -17,4 +17,4 @@
 | 013 | Stabilize Runtime Architecture and Reset System | Done | 56a682b |
 | 014 | Runtime Source Repair | Done | a7e7839 |
 | 016 | Reset IceBreaker — clear delivered field | Done | ab76414 |
-| 017 | Document Sender Storage Model | Done | (pending) |
+| 017 | Document Sender Storage Model | Done | ff6d059 |
