@@ -7,8 +7,8 @@ All notable changes to this project will be documented in this file.
 Reset IceBreaker — clear `delivered` field during reset to restore original AgencyBooster sender state.
 
 - **Fixed**: `ResetManager.resetIceBreaker` — now clears `data.delivered` (guarded by `"delivered" in data`) alongside existing `chainProgress` and `sended` cleanup
-- Ensures original AgencyBooster Completed counter resets correctly after private IceBreaker chain reset
-- No changes to `getCompletedCount()`, `resetBroadcast()`, or Companion Dashboard logic
+- **Why**: The original AgencyBooster Completed counter is driven by the `delivered` field, not `sended`. Clearing only `chainProgress` and `sended` left the original extension's Completed counter stale after reset. Verified on GoldenBride.
+- **Scope**: `resetIceBreaker` only. `getCompletedCount()`, `resetBroadcast()`, and Companion Dashboard logic unchanged.
 - Version bumped to 1.6.2
 
 ## v1.6.1
