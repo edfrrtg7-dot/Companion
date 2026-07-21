@@ -421,10 +421,13 @@ export class FinanceWidget {
         this.contentEl.innerHTML = "";
 
         const def = FinanceShift.getDefinition(state.shift);
-
-        // Filter transactions by shift
         const allTransactions = state.data?.list ?? [];
-        const filtered = FinanceShift.filterByShift(allTransactions, state.shift);
+
+        // Smart filtering: handles night shift phases
+        const { filtered, isWaiting } = FinanceShift.filterByShiftSmart(
+            allTransactions,
+            state.shift
+        );
 
         // Compute sum of filtered transactions
         const filteredSum = filtered.reduce((acc, tx) => acc + tx.sum, 0);
@@ -473,7 +476,7 @@ export class FinanceWidget {
         creditsLabel.textContent = "Credits";
         const creditsValue = document.createElement("span");
         creditsValue.className = `${this.classPrefix}-value ${this.classPrefix}-accent`;
-        creditsValue.textContent = filteredSum.toLocaleString();
+        creditsValue.textContent = isWaiting ? "0" : filteredSum.toLocaleString();
         creditsRow.appendChild(creditsLabel);
         creditsRow.appendChild(creditsValue);
 
@@ -485,6 +488,13 @@ export class FinanceWidget {
         this.contentEl.appendChild(divider1);
         this.contentEl.appendChild(creditsRow);
         this.contentEl.appendChild(divider2);
+
+        // Night shift waiting state
+        if (isWaiting) {
+            const waitingMsg = this.createMessage(`Waiting for Night shift (${def.timeDisplay}).`);
+            this.contentEl.appendChild(waitingMsg);
+            return;
+        }
 
         if (filtered.length === 0) {
             const empty = this.createMessage("No transactions for this shift.");

@@ -536,6 +536,85 @@
     static formatDateRange(range) {
       return `${_FinanceShift.formatDate(range.from)} \u2014 ${_FinanceShift.formatDate(range.to)}`;
     }
+    // -------------------------------------------------------------------------
+    // Smart Night Shift Logic
+    // -------------------------------------------------------------------------
+    /**
+     * Night shift phase based on current local time.
+     *
+     * - "active-23": 23:00–23:59 — night is active, show transactions from 23:00 to now
+     * - "active-00": 00:00–06:59 — night is active, show transactions from yesterday 23:00 to now
+     * - "waiting": 07:00–22:59 — night has not started, show waiting message
+     */
+    static getNightPhase(now) {
+      const current = now ?? /* @__PURE__ */ new Date();
+      const hour = current.getHours();
+      if (hour >= 23) {
+        return "active-23";
+      }
+      if (hour < 7) {
+        return "active-00";
+      }
+      return "waiting";
+    }
+    /**
+     * Check if night shift is currently active (23:00–06:59).
+     */
+    static isNightActive(now) {
+      const phase = _FinanceShift.getNightPhase(now);
+      return phase === "active-23" || phase === "active-00";
+    }
+    /**
+     * Compute the time-bounded filter range for night shift.
+     *
+     * Case 1 (23:00–23:59): today 23:00 → now
+     * Case 2 (00:00–06:59): yesterday 23:00 → now
+     * Case 3 (07:00–22:59): no range (waiting)
+     */
+    static computeNightFilterRange(now) {
+      const current = now ?? /* @__PURE__ */ new Date();
+      const phase = _FinanceShift.getNightPhase(current);
+      if (phase === "waiting") {
+        return null;
+      }
+      const to = new Date(current);
+      const from = new Date(current);
+      if (phase === "active-23") {
+        from.setHours(23, 0, 0, 0);
+      } else {
+        from.setDate(from.getDate() - 1);
+        from.setHours(23, 0, 0, 0);
+      }
+      return { from, to };
+    }
+    /**
+     * Smart filter: applies time-bounded filtering for night shift.
+     * For morning/day: uses standard hour-based filtering.
+     * For night: uses time range filtering based on current phase.
+     *
+     * @returns Filtered transactions, or null if night shift is in waiting state.
+     */
+    static filterByShiftSmart(transactions, shiftType, now) {
+      if (shiftType !== "night") {
+        return {
+          filtered: _FinanceShift.filterByShift(transactions, shiftType),
+          isWaiting: false
+        };
+      }
+      const phase = _FinanceShift.getNightPhase(now);
+      if (phase === "waiting") {
+        return { filtered: [], isWaiting: true };
+      }
+      const range = _FinanceShift.computeNightFilterRange(now);
+      if (!range) {
+        return { filtered: [], isWaiting: true };
+      }
+      const filtered = transactions.filter((tx) => {
+        const txTime = tx.date.getTime();
+        return txTime >= range.from.getTime() && txTime <= range.to.getTime();
+      });
+      return { filtered, isWaiting: false };
+    }
   };
 
   // ../src/companion/finance-controller.ts
@@ -1030,7 +1109,10 @@
       this.contentEl.innerHTML = "";
       const def = FinanceShift.getDefinition(state.shift);
       const allTransactions = state.data?.list ?? [];
-      const filtered = FinanceShift.filterByShift(allTransactions, state.shift);
+      const { filtered, isWaiting } = FinanceShift.filterByShiftSmart(
+        allTransactions,
+        state.shift
+      );
       const filteredSum = filtered.reduce((acc, tx) => acc + tx.sum, 0);
       const shiftInfo = document.createElement("div");
       shiftInfo.className = `${this.classPrefix}-shift-info`;
@@ -1066,7 +1148,7 @@
       creditsLabel.textContent = "Credits";
       const creditsValue = document.createElement("span");
       creditsValue.className = `${this.classPrefix}-value ${this.classPrefix}-accent`;
-      creditsValue.textContent = filteredSum.toLocaleString();
+      creditsValue.textContent = isWaiting ? "0" : filteredSum.toLocaleString();
       creditsRow.appendChild(creditsLabel);
       creditsRow.appendChild(creditsValue);
       const divider2 = document.createElement("div");
@@ -1075,6 +1157,11 @@
       this.contentEl.appendChild(divider1);
       this.contentEl.appendChild(creditsRow);
       this.contentEl.appendChild(divider2);
+      if (isWaiting) {
+        const waitingMsg = this.createMessage(`Waiting for Night shift (${def.timeDisplay}).`);
+        this.contentEl.appendChild(waitingMsg);
+        return;
+      }
       if (filtered.length === 0) {
         const empty = this.createMessage("No transactions for this shift.");
         this.contentEl.appendChild(empty);
