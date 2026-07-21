@@ -34,6 +34,11 @@ export interface FinanceWidgetConfig {
 
 const DEFAULT_CLASS_PREFIX = "ab-finance";
 
+const MIN_WIDTH = 280;
+const MIN_HEIGHT = 200;
+const MAX_WIDTH = 700;
+const MAX_HEIGHT = 600;
+
 // ---------------------------------------------------------------------------
 // FinanceWidget
 // ---------------------------------------------------------------------------
@@ -59,6 +64,15 @@ export class FinanceWidget {
     private boundOnDragPointerMove: ((e: PointerEvent) => void) | null = null;
     private boundOnDragPointerUp: (() => void) | null = null;
 
+    // Resize state
+    private isResizing = false;
+    private resizeStartX = 0;
+    private resizeStartY = 0;
+    private resizeOrigW = 0;
+    private resizeOrigH = 0;
+    private boundOnResizePointerMove: ((e: PointerEvent) => void) | null = null;
+    private boundOnResizePointerUp: (() => void) | null = null;
+
     constructor(controller: FinanceController, config: FinanceWidgetConfig = {}) {
         this.controller = controller;
         this.container = config.container ?? document.body;
@@ -80,6 +94,7 @@ export class FinanceWidget {
         this.unsubscribe();
         this.controller.cancelPending();
         this.removeDragListeners();
+        this.removeResizeListeners();
         this.root?.remove();
         this.root = null;
         this.refreshBtn = null;
@@ -120,18 +135,11 @@ export class FinanceWidget {
         const root = document.createElement("div");
         root.className = this.classPrefix;
         root.id = `${this.classPrefix}-widget`;
-        root.style.width = "360px";
-        root.style.height = "380px";
-        root.style.position = "fixed";
-        root.style.bottom = "20px";
-        root.style.right = "20px";
-        root.style.zIndex = "2147483647";
 
         // Drag handle (header)
         const dragHandle = document.createElement("div");
         dragHandle.className = `${this.classPrefix}-header`;
         dragHandle.id = `${this.classPrefix}-drag-handle`;
-        dragHandle.style.cursor = "grab";
 
         // Title
         const title = document.createElement("div");
@@ -150,7 +158,6 @@ export class FinanceWidget {
         // Shift dropdown
         const shiftDropdown = document.createElement("div");
         shiftDropdown.className = `${this.classPrefix}-shift-dropdown`;
-        shiftDropdown.style.display = "none";
 
         for (const def of FinanceShift.getAllDefinitions()) {
             const option = document.createElement("button");
@@ -165,7 +172,7 @@ export class FinanceWidget {
         const refreshBtn = document.createElement("button");
         refreshBtn.className = `${this.classPrefix}-btn`;
         refreshBtn.title = "Refresh";
-        refreshBtn.textContent = "↻";
+        refreshBtn.textContent = "\u21BB";
 
         actions.appendChild(shiftBtn);
         actions.appendChild(shiftDropdown);
@@ -178,8 +185,13 @@ export class FinanceWidget {
         const content = document.createElement("div");
         content.className = `${this.classPrefix}-body`;
 
+        // Resize handle
+        const resizeHandle = document.createElement("div");
+        resizeHandle.className = `${this.classPrefix}-resize-handle`;
+
         root.appendChild(dragHandle);
         root.appendChild(content);
+        root.appendChild(resizeHandle);
 
         this.root = root;
         this.refreshBtn = refreshBtn;
@@ -189,6 +201,7 @@ export class FinanceWidget {
 
         // Attach event listeners
         dragHandle.addEventListener("pointerdown", this.onDragPointerDown);
+        resizeHandle.addEventListener("pointerdown", this.onResizePointerDown);
         shiftBtn.addEventListener("click", this.onShiftToggle);
         refreshBtn.addEventListener("click", this.onRefreshClick);
 
@@ -217,9 +230,10 @@ export class FinanceWidget {
         this.dragOrigX = rect.left;
         this.dragOrigY = rect.top;
 
-        // Set cursor
-        if (this.root.firstElementChild) {
-            (this.root.firstElementChild as HTMLElement).style.cursor = "grabbing";
+        // Set cursor on header
+        const header = this.root.querySelector(`.${this.classPrefix}-header`) as HTMLElement | null;
+        if (header) {
+            header.style.cursor = "grabbing";
         }
 
         // Create bound handlers for this drag session
@@ -229,6 +243,9 @@ export class FinanceWidget {
         document.addEventListener("pointermove", this.boundOnDragPointerMove);
         document.addEventListener("pointerup", this.boundOnDragPointerUp);
         document.addEventListener("pointercancel", this.boundOnDragPointerUp);
+
+        // Also handle window blur to cancel drag if cursor leaves browser
+        window.addEventListener("blur", this.boundOnDragPointerUp);
     };
 
     private onDragPointerMove = (e: PointerEvent): void => {
@@ -247,9 +264,12 @@ export class FinanceWidget {
     private onDragPointerUp = (): void => {
         this.isDragging = false;
 
-        // Restore cursor
-        if (this.root && this.root.firstElementChild) {
-            (this.root.firstElementChild as HTMLElement).style.cursor = "grab";
+        // Restore cursor on header
+        if (this.root) {
+            const header = this.root.querySelector(`.${this.classPrefix}-header`) as HTMLElement | null;
+            if (header) {
+                header.style.cursor = "grab";
+            }
         }
 
         this.removeDragListeners();
@@ -262,9 +282,68 @@ export class FinanceWidget {
         if (this.boundOnDragPointerUp) {
             document.removeEventListener("pointerup", this.boundOnDragPointerUp);
             document.removeEventListener("pointercancel", this.boundOnDragPointerUp);
+            window.removeEventListener("blur", this.boundOnDragPointerUp);
         }
         this.boundOnDragPointerMove = null;
         this.boundOnDragPointerUp = null;
+    }
+
+    // -------------------------------------------------------------------------
+    // Resize handling
+    // -------------------------------------------------------------------------
+
+    private onResizePointerDown = (e: PointerEvent): void => {
+        if (this.destroyed || !this.root) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        this.isResizing = true;
+        this.resizeStartX = e.clientX;
+        this.resizeStartY = e.clientY;
+
+        const rect = this.root.getBoundingClientRect();
+        this.resizeOrigW = rect.width;
+        this.resizeOrigH = rect.height;
+
+        this.boundOnResizePointerMove = this.onResizePointerMove;
+        this.boundOnResizePointerUp = this.onResizePointerUp;
+
+        document.addEventListener("pointermove", this.boundOnResizePointerMove);
+        document.addEventListener("pointerup", this.boundOnResizePointerUp);
+        document.addEventListener("pointercancel", this.boundOnResizePointerUp);
+        window.addEventListener("blur", this.boundOnResizePointerUp);
+    };
+
+    private onResizePointerMove = (e: PointerEvent): void => {
+        if (!this.isResizing || !this.root) return;
+        e.preventDefault();
+
+        const dx = e.clientX - this.resizeStartX;
+        const dy = e.clientY - this.resizeStartY;
+
+        const newW = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, this.resizeOrigW + dx));
+        const newH = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, this.resizeOrigH + dy));
+
+        this.root.style.width = newW + "px";
+        this.root.style.height = newH + "px";
+    };
+
+    private onResizePointerUp = (): void => {
+        this.isResizing = false;
+        this.removeResizeListeners();
+    };
+
+    private removeResizeListeners(): void {
+        if (this.boundOnResizePointerMove) {
+            document.removeEventListener("pointermove", this.boundOnResizePointerMove);
+        }
+        if (this.boundOnResizePointerUp) {
+            document.removeEventListener("pointerup", this.boundOnResizePointerUp);
+            document.removeEventListener("pointercancel", this.boundOnResizePointerUp);
+            window.removeEventListener("blur", this.boundOnResizePointerUp);
+        }
+        this.boundOnResizePointerMove = null;
+        this.boundOnResizePointerUp = null;
     }
 
     // -------------------------------------------------------------------------
@@ -274,13 +353,13 @@ export class FinanceWidget {
     private updateRefreshButton(status: string): void {
         if (!this.refreshBtn) return;
         this.refreshBtn.disabled = status === "loading";
-        this.refreshBtn.textContent = status === "loading" ? "…" : "↻";
+        this.refreshBtn.textContent = status === "loading" ? "\u2026" : "\u21BB";
     }
 
     private updateShiftButton(shift: ShiftType): void {
         if (!this.shiftBtn || !this.shiftDropdown) return;
         const def = FinanceShift.getDefinition(shift);
-        this.shiftBtn.textContent = `${def.label} ▾`;
+        this.shiftBtn.textContent = `${def.label} \u25BE`;
 
         // Update active state in dropdown
         const options = this.shiftDropdown.querySelectorAll(`.${this.classPrefix}-shift-option`);
@@ -323,7 +402,7 @@ export class FinanceWidget {
     private renderLoading(): void {
         if (!this.contentEl) return;
         this.contentEl.innerHTML = "";
-        const message = this.createMessage("Loading…");
+        const message = this.createMessage("Loading\u2026");
         this.contentEl.appendChild(message);
     }
 
@@ -332,7 +411,13 @@ export class FinanceWidget {
         this.contentEl.innerHTML = "";
 
         const def = FinanceShift.getDefinition(state.shift);
-        const dateRange = FinanceShift.computeDateRange(state.shift);
+
+        // Filter transactions by shift
+        const allTransactions = state.data?.list ?? [];
+        const filtered = FinanceShift.filterByShift(allTransactions, state.shift);
+
+        // Compute sum of filtered transactions
+        const filteredSum = filtered.reduce((acc, tx) => acc + tx.sum, 0);
 
         // Shift info section
         const shiftInfo = document.createElement("div");
@@ -343,10 +428,11 @@ export class FinanceWidget {
         row1.className = `${this.classPrefix}-shift-info-row`;
         const label1 = document.createElement("span");
         label1.className = `${this.classPrefix}-label`;
-        label1.textContent = "Today:";
+        label1.textContent = "Date:";
         const value1 = document.createElement("span");
         value1.className = `${this.classPrefix}-value`;
-        value1.textContent = FinanceShift.formatDate(dateRange.from);
+        const today = new Date();
+        value1.textContent = FinanceShift.formatDate(today);
         row1.appendChild(label1);
         row1.appendChild(value1);
 
@@ -358,31 +444,18 @@ export class FinanceWidget {
         label2.textContent = "Shift:";
         const value2 = document.createElement("span");
         value2.className = `${this.classPrefix}-value ${this.classPrefix}-accent`;
-        value2.textContent = def.label;
+        value2.textContent = `${def.label} (${def.timeDisplay})`;
         row2.appendChild(label2);
         row2.appendChild(value2);
 
-        // Schedule row
-        const row3 = document.createElement("div");
-        row3.className = `${this.classPrefix}-shift-info-row`;
-        const label3 = document.createElement("span");
-        label3.className = `${this.classPrefix}-label`;
-        label3.textContent = "Schedule:";
-        const value3 = document.createElement("span");
-        value3.className = `${this.classPrefix}-value ${this.classPrefix}-shift-time-display`;
-        value3.textContent = def.timeDisplay;
-        row3.appendChild(label3);
-        row3.appendChild(value3);
-
         shiftInfo.appendChild(row1);
         shiftInfo.appendChild(row2);
-        shiftInfo.appendChild(row3);
 
         // Divider
         const divider1 = document.createElement("div");
         divider1.className = `${this.classPrefix}-divider`;
 
-        // Credits row
+        // Credits row — sum of filtered transactions
         const creditsRow = document.createElement("div");
         creditsRow.className = `${this.classPrefix}-row`;
         const creditsLabel = document.createElement("span");
@@ -390,7 +463,7 @@ export class FinanceWidget {
         creditsLabel.textContent = "Credits";
         const creditsValue = document.createElement("span");
         creditsValue.className = `${this.classPrefix}-value ${this.classPrefix}-accent`;
-        creditsValue.textContent = state.data?.total?.toLocaleString() ?? "—";
+        creditsValue.textContent = filteredSum.toLocaleString();
         creditsRow.appendChild(creditsLabel);
         creditsRow.appendChild(creditsValue);
 
@@ -398,33 +471,29 @@ export class FinanceWidget {
         const divider2 = document.createElement("div");
         divider2.className = `${this.classPrefix}-divider`;
 
-        // Transaction list
-        const transactions = state.data?.list ?? [];
-
         this.contentEl.appendChild(shiftInfo);
         this.contentEl.appendChild(divider1);
         this.contentEl.appendChild(creditsRow);
         this.contentEl.appendChild(divider2);
 
-        if (transactions.length === 0) {
-            const empty = this.createMessage("No transactions found.");
+        if (filtered.length === 0) {
+            const empty = this.createMessage("No transactions for this shift.");
             this.contentEl.appendChild(empty);
         } else {
             const txContainer = document.createElement("div");
             txContainer.className = `${this.classPrefix}-tx-container`;
 
-            // Header row
+            // Header row: Time | Operation | Target | Credits
             const headerRow = document.createElement("div");
             headerRow.className = `${this.classPrefix}-tx-header`;
-            headerRow.appendChild(this.createTxCell("Date"));
-            headerRow.appendChild(this.createTxCell("Time"));
-            headerRow.appendChild(this.createTxCell("Op"));
-            headerRow.appendChild(this.createTxCell("Target"));
-            headerRow.appendChild(this.createTxCell("Cr"));
+            headerRow.appendChild(this.createTxHeaderCell("Time"));
+            headerRow.appendChild(this.createTxHeaderCell("Operation"));
+            headerRow.appendChild(this.createTxHeaderCell("Target"));
+            headerRow.appendChild(this.createTxHeaderCell("Credits"));
             txContainer.appendChild(headerRow);
 
             // Transaction rows
-            for (const tx of transactions) {
+            for (const tx of filtered) {
                 txContainer.appendChild(this.createTransactionRow(tx));
             }
 
@@ -451,18 +520,22 @@ export class FinanceWidget {
         const row = document.createElement("div");
         row.className = `${this.classPrefix}-tx-row`;
 
-        // Date: dd.MM.yyyy
-        const dateStr = FinanceShift.formatDate(tx.date);
         // Time: HH:mm
         const timeStr = FinanceShift.formatTime(tx.date);
 
-        row.appendChild(this.createTxCell(dateStr));
         row.appendChild(this.createTxCell(timeStr));
         row.appendChild(this.createTxCell(tx.operation, true));
-        row.appendChild(this.createTxCell(tx.name));
+        row.appendChild(this.createTxCell(String(tx.userID)));
         row.appendChild(this.createTxCell(tx.sum.toLocaleString(), false, true));
 
         return row;
+    }
+
+    private createTxHeaderCell(text: string): HTMLSpanElement {
+        const cell = document.createElement("span");
+        cell.className = `${this.classPrefix}-tx-cell ${this.classPrefix}-tx-header-cell`;
+        cell.textContent = text;
+        return cell;
     }
 
     private createTxCell(text: string, isOp: boolean = false, isCredits: boolean = false): HTMLSpanElement {
@@ -493,8 +566,12 @@ export class FinanceWidget {
 
     private onShiftToggle = (): void => {
         if (this.destroyed || !this.shiftDropdown) return;
-        const isVisible = this.shiftDropdown.style.display !== "none";
-        this.shiftDropdown.style.display = isVisible ? "none" : "flex";
+        const isVisible = this.shiftDropdown.classList.contains("open");
+        if (isVisible) {
+            this.shiftDropdown.classList.remove("open");
+        } else {
+            this.shiftDropdown.classList.add("open");
+        }
     };
 
     private onShiftSelect = (event: Event): void => {
@@ -504,7 +581,7 @@ export class FinanceWidget {
         if (shift && (shift === "morning" || shift === "day" || shift === "night")) {
             this.controller.setShift(shift);
             if (this.shiftDropdown) {
-                this.shiftDropdown.style.display = "none";
+                this.shiftDropdown.classList.remove("open");
             }
         }
     };

@@ -503,6 +503,34 @@
       return `${hours}:${minutes}`;
     }
     /**
+     * Check if a timestamp falls within a shift's time window.
+     *
+     * Morning (07:00–14:59): hour >= 7 && hour < 15
+     * Day (15:00–22:59): hour >= 15 && hour < 23
+     * Night (23:00–06:59): hour >= 23 || hour < 7
+     *
+     * @param timestamp - The transaction timestamp to check.
+     * @param shiftType - The shift type to test against.
+     * @returns true if the timestamp falls within the shift.
+     */
+    static isInShift(timestamp, shiftType) {
+      const hour = timestamp.getHours();
+      switch (shiftType) {
+        case "morning":
+          return hour >= 7 && hour < 15;
+        case "day":
+          return hour >= 15 && hour < 23;
+        case "night":
+          return hour >= 23 || hour < 7;
+      }
+    }
+    /**
+     * Filter a list of transactions to those falling within the given shift.
+     */
+    static filterByShift(transactions, shiftType) {
+      return transactions.filter((tx) => _FinanceShift.isInShift(tx.date, shiftType));
+    }
+    /**
      * Format the shift date range for display.
      */
     static formatDateRange(range) {
@@ -674,6 +702,10 @@
 
   // ../src/companion/finance-widget.ts
   var DEFAULT_CLASS_PREFIX = "ab-finance";
+  var MIN_WIDTH = 280;
+  var MIN_HEIGHT = 200;
+  var MAX_WIDTH = 700;
+  var MAX_HEIGHT = 600;
   var FinanceWidget = class {
     constructor(controller, config = {}) {
       __publicField(this, "controller");
@@ -694,6 +726,14 @@
       __publicField(this, "dragOrigY", 0);
       __publicField(this, "boundOnDragPointerMove", null);
       __publicField(this, "boundOnDragPointerUp", null);
+      // Resize state
+      __publicField(this, "isResizing", false);
+      __publicField(this, "resizeStartX", 0);
+      __publicField(this, "resizeStartY", 0);
+      __publicField(this, "resizeOrigW", 0);
+      __publicField(this, "resizeOrigH", 0);
+      __publicField(this, "boundOnResizePointerMove", null);
+      __publicField(this, "boundOnResizePointerUp", null);
       // -------------------------------------------------------------------------
       // State rendering
       // -------------------------------------------------------------------------
@@ -717,14 +757,16 @@
         const rect = this.root.getBoundingClientRect();
         this.dragOrigX = rect.left;
         this.dragOrigY = rect.top;
-        if (this.root.firstElementChild) {
-          this.root.firstElementChild.style.cursor = "grabbing";
+        const header = this.root.querySelector(`.${this.classPrefix}-header`);
+        if (header) {
+          header.style.cursor = "grabbing";
         }
         this.boundOnDragPointerMove = this.onDragPointerMove;
         this.boundOnDragPointerUp = this.onDragPointerUp;
         document.addEventListener("pointermove", this.boundOnDragPointerMove);
         document.addEventListener("pointerup", this.boundOnDragPointerUp);
         document.addEventListener("pointercancel", this.boundOnDragPointerUp);
+        window.addEventListener("blur", this.boundOnDragPointerUp);
       });
       __publicField(this, "onDragPointerMove", (e) => {
         if (!this.isDragging || !this.root) return;
@@ -738,10 +780,47 @@
       });
       __publicField(this, "onDragPointerUp", () => {
         this.isDragging = false;
-        if (this.root && this.root.firstElementChild) {
-          this.root.firstElementChild.style.cursor = "grab";
+        if (this.root) {
+          const header = this.root.querySelector(`.${this.classPrefix}-header`);
+          if (header) {
+            header.style.cursor = "grab";
+          }
         }
         this.removeDragListeners();
+      });
+      // -------------------------------------------------------------------------
+      // Resize handling
+      // -------------------------------------------------------------------------
+      __publicField(this, "onResizePointerDown", (e) => {
+        if (this.destroyed || !this.root) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.isResizing = true;
+        this.resizeStartX = e.clientX;
+        this.resizeStartY = e.clientY;
+        const rect = this.root.getBoundingClientRect();
+        this.resizeOrigW = rect.width;
+        this.resizeOrigH = rect.height;
+        this.boundOnResizePointerMove = this.onResizePointerMove;
+        this.boundOnResizePointerUp = this.onResizePointerUp;
+        document.addEventListener("pointermove", this.boundOnResizePointerMove);
+        document.addEventListener("pointerup", this.boundOnResizePointerUp);
+        document.addEventListener("pointercancel", this.boundOnResizePointerUp);
+        window.addEventListener("blur", this.boundOnResizePointerUp);
+      });
+      __publicField(this, "onResizePointerMove", (e) => {
+        if (!this.isResizing || !this.root) return;
+        e.preventDefault();
+        const dx = e.clientX - this.resizeStartX;
+        const dy = e.clientY - this.resizeStartY;
+        const newW = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, this.resizeOrigW + dx));
+        const newH = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, this.resizeOrigH + dy));
+        this.root.style.width = newW + "px";
+        this.root.style.height = newH + "px";
+      });
+      __publicField(this, "onResizePointerUp", () => {
+        this.isResizing = false;
+        this.removeResizeListeners();
       });
       __publicField(this, "onRefreshClick", () => {
         if (this.destroyed) return;
@@ -749,8 +828,12 @@
       });
       __publicField(this, "onShiftToggle", () => {
         if (this.destroyed || !this.shiftDropdown) return;
-        const isVisible = this.shiftDropdown.style.display !== "none";
-        this.shiftDropdown.style.display = isVisible ? "none" : "flex";
+        const isVisible = this.shiftDropdown.classList.contains("open");
+        if (isVisible) {
+          this.shiftDropdown.classList.remove("open");
+        } else {
+          this.shiftDropdown.classList.add("open");
+        }
       });
       __publicField(this, "onShiftSelect", (event) => {
         if (this.destroyed) return;
@@ -759,7 +842,7 @@
         if (shift && (shift === "morning" || shift === "day" || shift === "night")) {
           this.controller.setShift(shift);
           if (this.shiftDropdown) {
-            this.shiftDropdown.style.display = "none";
+            this.shiftDropdown.classList.remove("open");
           }
         }
       });
@@ -780,6 +863,7 @@
       this.unsubscribe();
       this.controller.cancelPending();
       this.removeDragListeners();
+      this.removeResizeListeners();
       this.root?.remove();
       this.root = null;
       this.refreshBtn = null;
@@ -806,16 +890,9 @@
       const root = document.createElement("div");
       root.className = this.classPrefix;
       root.id = `${this.classPrefix}-widget`;
-      root.style.width = "360px";
-      root.style.height = "380px";
-      root.style.position = "fixed";
-      root.style.bottom = "20px";
-      root.style.right = "20px";
-      root.style.zIndex = "2147483647";
       const dragHandle = document.createElement("div");
       dragHandle.className = `${this.classPrefix}-header`;
       dragHandle.id = `${this.classPrefix}-drag-handle`;
-      dragHandle.style.cursor = "grab";
       const title = document.createElement("div");
       title.className = `${this.classPrefix}-header-title`;
       title.textContent = "Finance";
@@ -826,7 +903,6 @@
       shiftBtn.title = "Shift";
       const shiftDropdown = document.createElement("div");
       shiftDropdown.className = `${this.classPrefix}-shift-dropdown`;
-      shiftDropdown.style.display = "none";
       for (const def of FinanceShift.getAllDefinitions()) {
         const option = document.createElement("button");
         option.className = `${this.classPrefix}-shift-option`;
@@ -846,14 +922,18 @@
       dragHandle.appendChild(actions);
       const content = document.createElement("div");
       content.className = `${this.classPrefix}-body`;
+      const resizeHandle = document.createElement("div");
+      resizeHandle.className = `${this.classPrefix}-resize-handle`;
       root.appendChild(dragHandle);
       root.appendChild(content);
+      root.appendChild(resizeHandle);
       this.root = root;
       this.refreshBtn = refreshBtn;
       this.shiftBtn = shiftBtn;
       this.shiftDropdown = shiftDropdown;
       this.contentEl = content;
       dragHandle.addEventListener("pointerdown", this.onDragPointerDown);
+      resizeHandle.addEventListener("pointerdown", this.onResizePointerDown);
       shiftBtn.addEventListener("click", this.onShiftToggle);
       refreshBtn.addEventListener("click", this.onRefreshClick);
       this.container.appendChild(root);
@@ -865,9 +945,22 @@
       if (this.boundOnDragPointerUp) {
         document.removeEventListener("pointerup", this.boundOnDragPointerUp);
         document.removeEventListener("pointercancel", this.boundOnDragPointerUp);
+        window.removeEventListener("blur", this.boundOnDragPointerUp);
       }
       this.boundOnDragPointerMove = null;
       this.boundOnDragPointerUp = null;
+    }
+    removeResizeListeners() {
+      if (this.boundOnResizePointerMove) {
+        document.removeEventListener("pointermove", this.boundOnResizePointerMove);
+      }
+      if (this.boundOnResizePointerUp) {
+        document.removeEventListener("pointerup", this.boundOnResizePointerUp);
+        document.removeEventListener("pointercancel", this.boundOnResizePointerUp);
+        window.removeEventListener("blur", this.boundOnResizePointerUp);
+      }
+      this.boundOnResizePointerMove = null;
+      this.boundOnResizePointerUp = null;
     }
     // -------------------------------------------------------------------------
     // State-based rendering
@@ -924,17 +1017,20 @@
       if (!this.contentEl) return;
       this.contentEl.innerHTML = "";
       const def = FinanceShift.getDefinition(state.shift);
-      const dateRange = FinanceShift.computeDateRange(state.shift);
+      const allTransactions = state.data?.list ?? [];
+      const filtered = FinanceShift.filterByShift(allTransactions, state.shift);
+      const filteredSum = filtered.reduce((acc, tx) => acc + tx.sum, 0);
       const shiftInfo = document.createElement("div");
       shiftInfo.className = `${this.classPrefix}-shift-info`;
       const row1 = document.createElement("div");
       row1.className = `${this.classPrefix}-shift-info-row`;
       const label1 = document.createElement("span");
       label1.className = `${this.classPrefix}-label`;
-      label1.textContent = "Today:";
+      label1.textContent = "Date:";
       const value1 = document.createElement("span");
       value1.className = `${this.classPrefix}-value`;
-      value1.textContent = FinanceShift.formatDate(dateRange.from);
+      const today = /* @__PURE__ */ new Date();
+      value1.textContent = FinanceShift.formatDate(today);
       row1.appendChild(label1);
       row1.appendChild(value1);
       const row2 = document.createElement("div");
@@ -944,22 +1040,11 @@
       label2.textContent = "Shift:";
       const value2 = document.createElement("span");
       value2.className = `${this.classPrefix}-value ${this.classPrefix}-accent`;
-      value2.textContent = def.label;
+      value2.textContent = `${def.label} (${def.timeDisplay})`;
       row2.appendChild(label2);
       row2.appendChild(value2);
-      const row3 = document.createElement("div");
-      row3.className = `${this.classPrefix}-shift-info-row`;
-      const label3 = document.createElement("span");
-      label3.className = `${this.classPrefix}-label`;
-      label3.textContent = "Schedule:";
-      const value3 = document.createElement("span");
-      value3.className = `${this.classPrefix}-value ${this.classPrefix}-shift-time-display`;
-      value3.textContent = def.timeDisplay;
-      row3.appendChild(label3);
-      row3.appendChild(value3);
       shiftInfo.appendChild(row1);
       shiftInfo.appendChild(row2);
-      shiftInfo.appendChild(row3);
       const divider1 = document.createElement("div");
       divider1.className = `${this.classPrefix}-divider`;
       const creditsRow = document.createElement("div");
@@ -969,31 +1054,29 @@
       creditsLabel.textContent = "Credits";
       const creditsValue = document.createElement("span");
       creditsValue.className = `${this.classPrefix}-value ${this.classPrefix}-accent`;
-      creditsValue.textContent = state.data?.total?.toLocaleString() ?? "\u2014";
+      creditsValue.textContent = filteredSum.toLocaleString();
       creditsRow.appendChild(creditsLabel);
       creditsRow.appendChild(creditsValue);
       const divider2 = document.createElement("div");
       divider2.className = `${this.classPrefix}-divider`;
-      const transactions = state.data?.list ?? [];
       this.contentEl.appendChild(shiftInfo);
       this.contentEl.appendChild(divider1);
       this.contentEl.appendChild(creditsRow);
       this.contentEl.appendChild(divider2);
-      if (transactions.length === 0) {
-        const empty = this.createMessage("No transactions found.");
+      if (filtered.length === 0) {
+        const empty = this.createMessage("No transactions for this shift.");
         this.contentEl.appendChild(empty);
       } else {
         const txContainer = document.createElement("div");
         txContainer.className = `${this.classPrefix}-tx-container`;
         const headerRow = document.createElement("div");
         headerRow.className = `${this.classPrefix}-tx-header`;
-        headerRow.appendChild(this.createTxCell("Date"));
-        headerRow.appendChild(this.createTxCell("Time"));
-        headerRow.appendChild(this.createTxCell("Op"));
-        headerRow.appendChild(this.createTxCell("Target"));
-        headerRow.appendChild(this.createTxCell("Cr"));
+        headerRow.appendChild(this.createTxHeaderCell("Time"));
+        headerRow.appendChild(this.createTxHeaderCell("Operation"));
+        headerRow.appendChild(this.createTxHeaderCell("Target"));
+        headerRow.appendChild(this.createTxHeaderCell("Credits"));
         txContainer.appendChild(headerRow);
-        for (const tx of transactions) {
+        for (const tx of filtered) {
           txContainer.appendChild(this.createTransactionRow(tx));
         }
         this.contentEl.appendChild(txContainer);
@@ -1013,14 +1096,18 @@
     createTransactionRow(tx) {
       const row = document.createElement("div");
       row.className = `${this.classPrefix}-tx-row`;
-      const dateStr = FinanceShift.formatDate(tx.date);
       const timeStr = FinanceShift.formatTime(tx.date);
-      row.appendChild(this.createTxCell(dateStr));
       row.appendChild(this.createTxCell(timeStr));
       row.appendChild(this.createTxCell(tx.operation, true));
-      row.appendChild(this.createTxCell(tx.name));
+      row.appendChild(this.createTxCell(String(tx.userID)));
       row.appendChild(this.createTxCell(tx.sum.toLocaleString(), false, true));
       return row;
+    }
+    createTxHeaderCell(text) {
+      const cell = document.createElement("span");
+      cell.className = `${this.classPrefix}-tx-cell ${this.classPrefix}-tx-header-cell`;
+      cell.textContent = text;
+      return cell;
     }
     createTxCell(text, isOp = false, isCredits = false) {
       const cell = document.createElement("span");
@@ -1051,6 +1138,10 @@
     left: 24px;
     width: 360px;
     height: 380px;
+    min-width: 280px;
+    min-height: 200px;
+    max-width: 700px;
+    max-height: 600px;
     background: #1a1a2e;
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 10px;
@@ -1063,8 +1154,25 @@
     user-select: none;
     display: flex;
     flex-direction: column;
-    transition: opacity 0.2s ease;
     overflow: hidden;
+}
+
+/* Resize handle */
+.ab-finance-resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.3) 50%);
+    border-radius: 0 0 10px 0;
+    z-index: 1;
+    touch-action: none;
+}
+
+.ab-finance-resize-handle:hover {
+    background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.5) 50%);
 }
 
 /* Header / Drag handle */
@@ -1080,10 +1188,6 @@
     border-radius: 10px 10px 0 0;
     flex-shrink: 0;
     touch-action: none;
-}
-
-.ab-finance-header:active {
-    cursor: grabbing;
 }
 
 .ab-finance-header-title {
@@ -1131,6 +1235,7 @@
     gap: 6px;
     overflow-y: auto;
     flex: 1;
+    user-select: text;
 }
 
 .ab-finance-body::-webkit-scrollbar {
@@ -1245,12 +1350,14 @@
     display: flex;
     flex-direction: column;
     gap: 0;
+    width: 100%;
 }
 
+/* Transaction header: 4 columns \u2014 Time | Operation | Target | Credits */
 .ab-finance-tx-header {
     display: grid;
-    grid-template-columns: 48px 42px 1fr 60px 45px;
-    gap: 2px;
+    grid-template-columns: 50px 1fr 1fr 60px;
+    gap: 4px;
     font-size: 9px;
     text-transform: uppercase;
     color: rgba(255,255,255,0.5);
@@ -1259,10 +1366,11 @@
     border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 
+/* Transaction rows: same 4 columns */
 .ab-finance-tx-row {
     display: grid;
-    grid-template-columns: 48px 42px 1fr 60px 45px;
-    gap: 2px;
+    grid-template-columns: 50px 1fr 1fr 60px;
+    gap: 4px;
     font-size: 10px;
     padding: 3px 0;
     border-bottom: 1px solid rgba(255,255,255,0.03);
@@ -1273,6 +1381,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-align: center;
+}
+
+.ab-finance-tx-header-cell {
+    text-align: center;
+    font-weight: 600;
 }
 
 .ab-finance-tx-op {
@@ -1312,6 +1426,12 @@
     box-shadow: 0 8px 24px rgba(0,0,0,0.5);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+}
+
+.ab-finance-shift-dropdown.open {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
 }
 
 .ab-finance-shift-option {
@@ -1365,11 +1485,6 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-}
-
-.ab-finance-shift-time-display {
-    font-size: 11px;
-    color: #4fc3f7;
 }
 
 /* Status */

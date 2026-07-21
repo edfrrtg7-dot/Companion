@@ -224,6 +224,39 @@ export class FinanceShift {
     }
 
     /**
+     * Check if a timestamp falls within a shift's time window.
+     *
+     * Morning (07:00–14:59): hour >= 7 && hour < 15
+     * Day (15:00–22:59): hour >= 15 && hour < 23
+     * Night (23:00–06:59): hour >= 23 || hour < 7
+     *
+     * @param timestamp - The transaction timestamp to check.
+     * @param shiftType - The shift type to test against.
+     * @returns true if the timestamp falls within the shift.
+     */
+    static isInShift(timestamp: Date, shiftType: ShiftType): boolean {
+        const hour = timestamp.getHours();
+        switch (shiftType) {
+            case "morning":
+                return hour >= 7 && hour < 15;
+            case "day":
+                return hour >= 15 && hour < 23;
+            case "night":
+                return hour >= 23 || hour < 7;
+        }
+    }
+
+    /**
+     * Filter a list of transactions to those falling within the given shift.
+     */
+    static filterByShift<T extends { date: Date }>(
+        transactions: readonly T[],
+        shiftType: ShiftType
+    ): T[] {
+        return transactions.filter((tx) => FinanceShift.isInShift(tx.date, shiftType));
+    }
+
+    /**
      * Format the shift date range for display.
      */
     static formatDateRange(range: ShiftDateRange): string {
