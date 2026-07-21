@@ -49,7 +49,7 @@ const SHIFT_DEFINITIONS: ReadonlyMap<ShiftType, ShiftDefinition> = new Map([
             endHour: 14,
             endMinute: 59,
             label: "Morning",
-            timeDisplay: "07:00 → 14:59",
+            timeDisplay: "07:00 – 14:59",
         },
     ],
     [
@@ -61,7 +61,7 @@ const SHIFT_DEFINITIONS: ReadonlyMap<ShiftType, ShiftDefinition> = new Map([
             endHour: 22,
             endMinute: 59,
             label: "Day",
-            timeDisplay: "15:00 → 22:59",
+            timeDisplay: "15:00 – 22:59",
         },
     ],
     [
@@ -73,7 +73,7 @@ const SHIFT_DEFINITIONS: ReadonlyMap<ShiftType, ShiftDefinition> = new Map([
             endHour: 6,
             endMinute: 59,
             label: "Night",
-            timeDisplay: "23:00 → 06:59",
+            timeDisplay: "23:00 – 06:59",
         },
     ],
 ]);
@@ -205,14 +205,22 @@ export class FinanceShift {
     }
 
     /**
-     * Format a date for display.
+     * Format a date for display (dd.MM.yyyy).
      */
     static formatDate(date: Date): string {
-        return date.toLocaleDateString("uk-UA", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-        });
+        const day = String(date.getDate()).padStart(2, "0");
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const year = date.getFullYear();
+        return `${day}.${month}.${year}`;
+    }
+
+    /**
+     * Format time for display (HH:mm).
+     */
+    static formatTime(date: Date): string {
+        const hours = String(date.getHours()).padStart(2, "0");
+        const minutes = String(date.getMinutes()).padStart(2, "0");
+        return `${hours}:${minutes}`;
     }
 
     /**
