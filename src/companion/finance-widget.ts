@@ -332,6 +332,8 @@ export class FinanceWidget {
         root.id = `${this.classPrefix}-widget`;
         root.style.left = saved.x + "px";
         root.style.top = saved.y + "px";
+        root.style.width = saved.width + "px";
+        root.style.height = saved.height + "px";
         root.style.bottom = "auto";
         root.style.right = "auto";
 
