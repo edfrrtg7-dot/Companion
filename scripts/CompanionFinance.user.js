@@ -809,7 +809,7 @@
       const raw = localStorage.getItem(STORAGE_KEY2);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      if (typeof parsed === "object" && parsed !== null && typeof parsed.x === "number" && typeof parsed.y === "number" && typeof parsed.width === "number" && typeof parsed.height === "number" && typeof parsed.collapsed === "boolean" && typeof parsed.hidden === "boolean") {
+      if (typeof parsed === "object" && parsed !== null && typeof parsed.x === "number" && typeof parsed.y === "number" && typeof parsed.width === "number" && parsed.width > 0 && typeof parsed.height === "number" && parsed.height > 0 && typeof parsed.collapsed === "boolean" && typeof parsed.hidden === "boolean") {
         return parsed;
       }
     } catch {
@@ -1112,6 +1112,9 @@
     // State persistence
     // -------------------------------------------------------------------------
     persistState() {
+      if (this.win.width <= 0 || this.win.height <= 0) {
+        return;
+      }
       saveState({ ...this.win });
     }
     // -------------------------------------------------------------------------

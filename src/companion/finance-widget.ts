@@ -86,8 +86,8 @@ function loadState(): FinanceWindowState | null {
             parsed !== null &&
             typeof parsed.x === "number" &&
             typeof parsed.y === "number" &&
-            typeof parsed.width === "number" &&
-            typeof parsed.height === "number" &&
+            typeof parsed.width === "number" && parsed.width > 0 &&
+            typeof parsed.height === "number" && parsed.height > 0 &&
             typeof parsed.collapsed === "boolean" &&
             typeof parsed.hidden === "boolean"
         ) {
@@ -294,6 +294,9 @@ export class FinanceWidget {
     // -------------------------------------------------------------------------
 
     private persistState(): void {
+        if (this.win.width <= 0 || this.win.height <= 0) {
+            return;
+        }
         saveState({ ...this.win });
     }
 
