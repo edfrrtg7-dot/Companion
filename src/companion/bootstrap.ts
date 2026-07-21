@@ -16,35 +16,6 @@ function injectStyles(): void {
     document.head.appendChild(style);
 }
 
-function createReopenButton(widget: FinanceWidget): HTMLButtonElement {
-    const btn = document.createElement("button");
-    btn.id = "ab-finance-reopen";
-    btn.title = "Open Finance";
-    btn.textContent = "Finance";
-    btn.style.cssText = `
-        position: fixed;
-        bottom: 24px;
-        left: 24px;
-        z-index: 2147483645;
-        background: #2F6BFF;
-        color: #fff;
-        border: none;
-        border-radius: 8px;
-        padding: 8px 12px;
-        font-size: 12px;
-        font-weight: 600;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        display: none;
-    `;
-    btn.addEventListener("click", () => {
-        widget.show();
-        btn.style.display = "none";
-    });
-    document.body.appendChild(btn);
-    return btn;
-}
-
 function bootstrap(): void {
     // Wait for DOM ready
     if (document.readyState === "loading") {
@@ -65,18 +36,8 @@ function bootstrap(): void {
     // Create controller
     const controller = new FinanceController();
 
-    // Create reopen button (hidden by default)
-    let reopenBtn: HTMLButtonElement | null = null;
-
-    // Create widget with close callback
-    const widget = new FinanceWidget(controller, {
-        onClose: () => {
-            if (!reopenBtn) {
-                reopenBtn = createReopenButton(widget);
-            }
-            reopenBtn.style.display = "block";
-        },
-    });
+    // Create widget — no reopen button, Finance is reopened only through Companion Manage
+    new FinanceWidget(controller);
 }
 
 bootstrap();

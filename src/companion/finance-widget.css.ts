@@ -32,29 +32,15 @@ export const FINANCE_WIDGET_CSS = `
     overflow: hidden;
 }
 
-/* Compact collapse — widget becomes a title bar only */
-.ab-finance.collapsed {
-    width: auto !important;
-    height: auto !important;
-    min-width: 0;
-    min-height: 0;
-    max-width: none;
-    max-height: none;
-}
-
-.ab-finance.collapsed .ab-finance-body {
-    display: none !important;
-}
-
+/* Collapsed — JS controls geometry via explicit pixel dimensions.
+   CSS only hides the resize handle and adjusts header border. */
 .ab-finance.collapsed .ab-finance-resize-handle {
-    display: none !important;
+    display: none;
 }
 
 .ab-finance.collapsed .ab-finance-header {
     border-bottom: none;
     border-radius: 10px;
-    min-height: auto;
-    padding: 6px 12px;
 }
 
 /* Resize handle */
