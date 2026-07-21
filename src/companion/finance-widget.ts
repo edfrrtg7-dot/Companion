@@ -44,17 +44,20 @@ export class FinanceWidget {
     private readonly classPrefix: string;
     private readonly unsubscribe: () => void;
     private root: HTMLDivElement | null = null;
-    private dragHandle: HTMLDivElement | null = null;
     private refreshBtn: HTMLButtonElement | null = null;
     private shiftBtn: HTMLButtonElement | null = null;
     private shiftDropdown: HTMLDivElement | null = null;
     private contentEl: HTMLDivElement | null = null;
     private destroyed = false;
+
+    // Drag state
     private isDragging = false;
     private dragStartX = 0;
     private dragStartY = 0;
     private dragOrigX = 0;
     private dragOrigY = 0;
+    private boundOnDragPointerMove: ((e: PointerEvent) => void) | null = null;
+    private boundOnDragPointerUp: (() => void) | null = null;
 
     constructor(controller: FinanceController, config: FinanceWidgetConfig = {}) {
         this.controller = controller;
@@ -79,7 +82,6 @@ export class FinanceWidget {
         this.removeDragListeners();
         this.root?.remove();
         this.root = null;
-        this.dragHandle = null;
         this.refreshBtn = null;
         this.shiftBtn = null;
         this.shiftDropdown = null;
@@ -120,11 +122,16 @@ export class FinanceWidget {
         root.id = `${this.classPrefix}-widget`;
         root.style.width = "360px";
         root.style.height = "380px";
+        root.style.position = "fixed";
+        root.style.bottom = "20px";
+        root.style.right = "20px";
+        root.style.zIndex = "2147483647";
 
-        // Drag handle
+        // Drag handle (header)
         const dragHandle = document.createElement("div");
         dragHandle.className = `${this.classPrefix}-header`;
         dragHandle.id = `${this.classPrefix}-drag-handle`;
+        dragHandle.style.cursor = "grab";
 
         // Title
         const title = document.createElement("div");
@@ -139,8 +146,6 @@ export class FinanceWidget {
         const shiftBtn = document.createElement("button");
         shiftBtn.className = `${this.classPrefix}-shift-btn`;
         shiftBtn.title = "Shift";
-        shiftBtn.addEventListener("click", this.onShiftToggle);
-        shiftBtn.addEventListener("pointerdown", this.onButtonPointerDown);
 
         // Shift dropdown
         const shiftDropdown = document.createElement("div");
@@ -153,7 +158,6 @@ export class FinanceWidget {
             option.dataset.shift = def.type;
             option.innerHTML = `<span class="${this.classPrefix}-shift-name">${def.label}</span><span class="${this.classPrefix}-shift-time">${def.timeDisplay}</span>`;
             option.addEventListener("click", this.onShiftSelect);
-            option.addEventListener("pointerdown", this.onButtonPointerDown);
             shiftDropdown.appendChild(option);
         }
 
@@ -162,8 +166,6 @@ export class FinanceWidget {
         refreshBtn.className = `${this.classPrefix}-btn`;
         refreshBtn.title = "Refresh";
         refreshBtn.textContent = "↻";
-        refreshBtn.addEventListener("click", this.onRefreshClick);
-        refreshBtn.addEventListener("pointerdown", this.onButtonPointerDown);
 
         actions.appendChild(shiftBtn);
         actions.appendChild(shiftDropdown);
@@ -180,14 +182,15 @@ export class FinanceWidget {
         root.appendChild(content);
 
         this.root = root;
-        this.dragHandle = dragHandle;
         this.refreshBtn = refreshBtn;
         this.shiftBtn = shiftBtn;
         this.shiftDropdown = shiftDropdown;
         this.contentEl = content;
 
-        // Initialize drag
-        this.initDrag();
+        // Attach event listeners
+        dragHandle.addEventListener("pointerdown", this.onDragPointerDown);
+        shiftBtn.addEventListener("click", this.onShiftToggle);
+        refreshBtn.addEventListener("click", this.onRefreshClick);
 
         this.container.appendChild(root);
     }
@@ -196,31 +199,36 @@ export class FinanceWidget {
     // Drag handling
     // -------------------------------------------------------------------------
 
-    private initDrag(): void {
-        if (!this.dragHandle) return;
-        this.dragHandle.addEventListener("pointerdown", this.onDragPointerDown);
-    }
-
     private onDragPointerDown = (e: PointerEvent): void => {
-        if (this.destroyed) return;
-        // Don't drag when clicking buttons
-        if ((e.target as HTMLElement).closest("button")) return;
+        if (this.destroyed || !this.root) return;
+
+        // Don't drag when clicking buttons or interactive elements
+        const target = e.target as HTMLElement;
+        if (target.closest("button") || target.closest("select") || target.closest("input")) {
+            return;
+        }
 
         e.preventDefault();
         this.isDragging = true;
         this.dragStartX = e.clientX;
         this.dragStartY = e.clientY;
 
-        const rect = this.root!.getBoundingClientRect();
+        const rect = this.root.getBoundingClientRect();
         this.dragOrigX = rect.left;
         this.dragOrigY = rect.top;
 
-        this.dragHandle!.style.cursor = "grabbing";
-        this.dragHandle!.setPointerCapture(e.pointerId);
+        // Set cursor
+        if (this.root.firstElementChild) {
+            (this.root.firstElementChild as HTMLElement).style.cursor = "grabbing";
+        }
 
-        document.addEventListener("pointermove", this.onDragPointerMove);
-        document.addEventListener("pointerup", this.onDragPointerUp);
-        document.addEventListener("pointercancel", this.onDragPointerUp);
+        // Create bound handlers for this drag session
+        this.boundOnDragPointerMove = this.onDragPointerMove;
+        this.boundOnDragPointerUp = this.onDragPointerUp;
+
+        document.addEventListener("pointermove", this.boundOnDragPointerMove);
+        document.addEventListener("pointerup", this.boundOnDragPointerUp);
+        document.addEventListener("pointercancel", this.boundOnDragPointerUp);
     };
 
     private onDragPointerMove = (e: PointerEvent): void => {
@@ -233,29 +241,31 @@ export class FinanceWidget {
         this.root.style.left = newX + "px";
         this.root.style.top = newY + "px";
         this.root.style.bottom = "auto";
+        this.root.style.right = "auto";
     };
 
     private onDragPointerUp = (): void => {
-        if (!this.isDragging) return;
         this.isDragging = false;
 
-        if (this.dragHandle) {
-            this.dragHandle.style.cursor = "grab";
+        // Restore cursor
+        if (this.root && this.root.firstElementChild) {
+            (this.root.firstElementChild as HTMLElement).style.cursor = "grab";
         }
 
         this.removeDragListeners();
     };
 
     private removeDragListeners(): void {
-        document.removeEventListener("pointermove", this.onDragPointerMove);
-        document.removeEventListener("pointerup", this.onDragPointerUp);
-        document.removeEventListener("pointercancel", this.onDragPointerUp);
+        if (this.boundOnDragPointerMove) {
+            document.removeEventListener("pointermove", this.boundOnDragPointerMove);
+        }
+        if (this.boundOnDragPointerUp) {
+            document.removeEventListener("pointerup", this.boundOnDragPointerUp);
+            document.removeEventListener("pointercancel", this.boundOnDragPointerUp);
+        }
+        this.boundOnDragPointerMove = null;
+        this.boundOnDragPointerUp = null;
     }
-
-    private onButtonPointerDown = (e: PointerEvent): void => {
-        // Stop button clicks from triggering drag
-        e.stopPropagation();
-    };
 
     // -------------------------------------------------------------------------
     // State-based rendering
@@ -324,46 +334,49 @@ export class FinanceWidget {
         const def = FinanceShift.getDefinition(state.shift);
         const dateRange = FinanceShift.computeDateRange(state.shift);
 
-        // Shift info
+        // Shift info section
         const shiftInfo = document.createElement("div");
         shiftInfo.className = `${this.classPrefix}-shift-info`;
 
-        const shiftInfoRow1 = document.createElement("div");
-        shiftInfoRow1.className = `${this.classPrefix}-shift-info-row`;
-        const shiftLabel1 = document.createElement("span");
-        shiftLabel1.className = `${this.classPrefix}-label`;
-        shiftLabel1.textContent = "Today:";
-        const shiftValue1 = document.createElement("span");
-        shiftValue1.className = `${this.classPrefix}-value`;
-        shiftValue1.textContent = FinanceShift.formatDate(dateRange.from);
-        shiftInfoRow1.appendChild(shiftLabel1);
-        shiftInfoRow1.appendChild(shiftValue1);
+        // Today row
+        const row1 = document.createElement("div");
+        row1.className = `${this.classPrefix}-shift-info-row`;
+        const label1 = document.createElement("span");
+        label1.className = `${this.classPrefix}-label`;
+        label1.textContent = "Today:";
+        const value1 = document.createElement("span");
+        value1.className = `${this.classPrefix}-value`;
+        value1.textContent = FinanceShift.formatDate(dateRange.from);
+        row1.appendChild(label1);
+        row1.appendChild(value1);
 
-        const shiftInfoRow2 = document.createElement("div");
-        shiftInfoRow2.className = `${this.classPrefix}-shift-info-row`;
-        const shiftLabel2 = document.createElement("span");
-        shiftLabel2.className = `${this.classPrefix}-label`;
-        shiftLabel2.textContent = "Shift:";
-        const shiftValue2 = document.createElement("span");
-        shiftValue2.className = `${this.classPrefix}-value ${this.classPrefix}-accent`;
-        shiftValue2.textContent = def.label;
-        shiftInfoRow2.appendChild(shiftLabel2);
-        shiftInfoRow2.appendChild(shiftValue2);
+        // Shift row
+        const row2 = document.createElement("div");
+        row2.className = `${this.classPrefix}-shift-info-row`;
+        const label2 = document.createElement("span");
+        label2.className = `${this.classPrefix}-label`;
+        label2.textContent = "Shift:";
+        const value2 = document.createElement("span");
+        value2.className = `${this.classPrefix}-value ${this.classPrefix}-accent`;
+        value2.textContent = def.label;
+        row2.appendChild(label2);
+        row2.appendChild(value2);
 
-        const shiftInfoRow3 = document.createElement("div");
-        shiftInfoRow3.className = `${this.classPrefix}-shift-info-row`;
-        const shiftLabel3 = document.createElement("span");
-        shiftLabel3.className = `${this.classPrefix}-label`;
-        shiftLabel3.textContent = "Schedule:";
-        const shiftValue3 = document.createElement("span");
-        shiftValue3.className = `${this.classPrefix}-value ${this.classPrefix}-shift-time-display`;
-        shiftValue3.textContent = def.timeDisplay;
-        shiftInfoRow3.appendChild(shiftLabel3);
-        shiftInfoRow3.appendChild(shiftValue3);
+        // Schedule row
+        const row3 = document.createElement("div");
+        row3.className = `${this.classPrefix}-shift-info-row`;
+        const label3 = document.createElement("span");
+        label3.className = `${this.classPrefix}-label`;
+        label3.textContent = "Schedule:";
+        const value3 = document.createElement("span");
+        value3.className = `${this.classPrefix}-value ${this.classPrefix}-shift-time-display`;
+        value3.textContent = def.timeDisplay;
+        row3.appendChild(label3);
+        row3.appendChild(value3);
 
-        shiftInfo.appendChild(shiftInfoRow1);
-        shiftInfo.appendChild(shiftInfoRow2);
-        shiftInfo.appendChild(shiftInfoRow3);
+        shiftInfo.appendChild(row1);
+        shiftInfo.appendChild(row2);
+        shiftInfo.appendChild(row3);
 
         // Divider
         const divider1 = document.createElement("div");
@@ -438,7 +451,9 @@ export class FinanceWidget {
         const row = document.createElement("div");
         row.className = `${this.classPrefix}-tx-row`;
 
+        // Date: dd.MM.yyyy
         const dateStr = FinanceShift.formatDate(tx.date);
+        // Time: HH:mm
         const timeStr = FinanceShift.formatTime(tx.date);
 
         row.appendChild(this.createTxCell(dateStr));
