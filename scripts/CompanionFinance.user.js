@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AgencyBooster Finance Companion
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.1.0
 // @description  Finance widget for AgencyBooster
 // @author       Senior Staff JavaScript Engineer
 // @match        https://goldenbride.net/*
@@ -1041,5 +1041,19 @@
       return el;
     }
   };
+
+  // ../src/companion/bootstrap.ts
+  function bootstrap() {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", bootstrap);
+      return;
+    }
+    if (window.__AB_FINANCE_COMPANION__) return;
+    window.__AB_FINANCE_COMPANION__ = true;
+    if (window !== window.top) return;
+    const controller = new FinanceController();
+    new FinanceWidget(controller);
+  }
+  bootstrap();
 })();
 })();
