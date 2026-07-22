@@ -31,7 +31,7 @@ Companion operates in a browser extension context with access to page DOM, local
 - Access to page DOM and cookies
 - Access to localStorage
 - Network requests limited to same origin
-- No background script in current Tampermonkey phase
+- Background service worker for future messaging and storage
 
 ## Security Goals
 

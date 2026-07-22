@@ -8,7 +8,8 @@ Companion evolves through versioned releases. Each version delivers complete, te
 
 ### Pre-release (Current)
 
-- Tampermonkey userscript delivery
+- Chrome Extension (Manifest V3) delivery
+- Legacy Tampermonkey userscript (fallback)
 - Finance module (complete)
 - CompanionWindow base class
 - ModuleManager lifecycle

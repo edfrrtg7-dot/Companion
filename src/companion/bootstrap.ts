@@ -80,7 +80,7 @@ function createApp(): void {
     app.start();
 }
 
-function bootstrap(): void {
+export function bootstrap(): void {
     // Wait for DOM ready
     if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", bootstrap);
@@ -94,7 +94,13 @@ function bootstrap(): void {
     // Guard: top frame only
     if (window !== window.top) return;
 
+    diag("Bootstrap started");
     createApp();
+    diag("Bootstrap finished");
 }
 
-bootstrap();
+// Auto-bootstrap when loaded as userscript (Tampermonkey)
+// Content script imports and calls bootstrap() explicitly
+if (typeof chrome === "undefined" || !chrome.runtime?.id) {
+    bootstrap();
+}

@@ -48,7 +48,7 @@ Companion delivers value through three mechanisms:
 
 ## Long-term Direction
 
-Companion will evolve from a Tampermonkey userscript into a Chrome Extension (Manifest V3). This transition enables:
+Companion has transitioned from a Tampermonkey userscript to a Chrome Extension (Manifest V3). This transition enables:
 
 - Persistent background processing
 - Cross-origin resource access

@@ -1,0 +1,27 @@
+{
+  "name": "companion",
+  "version": "1.0.0",
+  "description": "Companion — Modular productivity platform for GoldenBride CRM",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "cd agencybooster-devtoolkit && node build-finance.mjs",
+    "build:ext": "cd agencybooster-devtoolkit && node build-extension-dev.mjs",
+    "build:ext:prod": "cd agencybooster-devtoolkit && node build-extension-prod.mjs",
+    "build:icons": "cd agencybooster-devtoolkit && node generate-icons.mjs",
+    "dev": "cd agencybooster-devtoolkit && node build-extension-dev.mjs",
+    "lint": "eslint src/ extension/",
+    "format": "prettier --write \"src/**/*.ts\" \"extension/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"extension/**/*.ts\"",
+    "typecheck": "cd agencybooster-devtoolkit && npx tsc --noEmit",
+    "check": "npm run lint && npm run typecheck"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.65.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.3.0",
+    "typescript-eslint": "^8.65.0"
+  }
+}

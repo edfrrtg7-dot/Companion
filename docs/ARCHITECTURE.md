@@ -69,7 +69,7 @@ graph TD
 
 ### Extension Layer
 
-The Chrome Extension provides the runtime environment. It manages permissions, content script injection, and background processing. In the current Tampermonkey phase, this layer is handled by the userscript runtime.
+The Chrome Extension provides the runtime environment. It manages permissions, content script injection, and background processing.
 
 **Responsibilities:**
 - Extension lifecycle management

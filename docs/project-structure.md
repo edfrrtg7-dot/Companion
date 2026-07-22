@@ -2,89 +2,134 @@
 
 ## Overview
 
-Companion follows a layered directory structure that separates concerns and enforces dependency boundaries.
+Companion follows a clean separation between source code, build output, assets, and documentation.
 
 ## Directory Layout
 
 ```
 Companion/
 ├── src/
-│   └── companion/
-│       ├── bootstrap.ts              Application entry point
-│       ├── companion-app.ts          Launcher and UI
-│       ├── companion-module.ts       Module interface
-│       ├── companion-window.ts       Base window class
-│       ├── module-manager.ts         Module lifecycle
-│       ├── dev.ts                    Development diagnostics
-│       ├── brand-logo.ts            Official SVG logo
-│       ├── brand-colors.ts          Brand color constants
-│       ├── finance-api-client.ts    HTTP communication
-│       ├── finance-controller.ts    Orchestration
-│       ├── finance-mapper.ts        Response mapping
-│       ├── finance-shift.ts         Shift definitions
-│       ├── finance-widget.ts        Widget UI
-│       ├── finance-widget.css.ts    Widget styles
-│       └── index.ts                 Barrel exports
-├── agencybooster-devtoolkit/
-│   ├── build-finance.mjs            Build script
-│   ├── package.json                 Dependencies
-│   └── tsconfig.json               TypeScript config
+│   └── companion/          Source code (TypeScript)
+│       ├── bootstrap.ts    Application entry point
+│       ├── companion-app.ts       Main application (launcher, menu)
+│       ├── companion-module.ts    Module interface definition
+│       ├── companion-window.ts    Abstract base class for windows
+│       ├── module-manager.ts      Module registration and lifecycle
+│       ├── dev.ts                 Development diagnostics
+│       ├── brand-logo.ts          SVG logo (generated from assets/logo.svg)
+│       ├── brand-colors.ts        Brand color constants
+│       ├── finance-api-client.ts  Finance HTTP client
+│       ├── finance-controller.ts  Finance state management
+│       ├── finance-mapper.ts      Finance response mapping
+│       ├── finance-shift.ts       Finance shift definitions
+│       ├── finance-widget.ts      Finance UI widget
+│       ├── finance-widget.css.ts  Finance widget styles
+│       └── index.ts              Barrel exports
+├── extension/
+│   ├── manifest.json       Chrome Extension manifest (Manifest V3)
+│   ├── content.ts          Content script entry point
+│   ├── background.ts       Background service worker
+│   ├── icons/              Extension icons (generated)
+│   └── dist/               Built extension output (gitignored)
+├── assets/
+│   └── logo.svg            Master brand asset (source of truth)
 ├── scripts/
-│   └── Companion.user.js            Built bundle
-├── assets/                          Static resources
-├── docs/                            Documentation
-├── LICENSE                          License file
-├── NOTICE                           Copyright notice
-└── README.md                        Project overview
+│   └── Companion.user.js   Legacy Tampermonkey userscript (built)
+├── agencybooster-devtoolkit/
+│   ├── build-finance.mjs           Legacy userscript build
+│   ├── build-extension-dev.mjs     Extension dev build
+│   ├── build-extension-prod.mjs    Extension production build
+│   ├── generate-icons.mjs          Icon generator
+│   ├── tsconfig.json               TypeScript configuration
+│   ├── eslint.config.mjs           (moved to root)
+│   ├── .prettierrc                 (moved to root)
+│   └── package.json                Development dependencies
+├── docs/                   Documentation
+├── eslint.config.mjs       ESLint configuration
+├── .prettierrc             Prettier configuration
+├── .editorconfig           Editor configuration
+├── .gitignore              Git ignore rules
+├── package.json            Root package.json (npm scripts)
+├── LICENSE                 License
+├── NOTICE                  Copyright notice
+└── README.md               Project overview
 ```
 
-## Purpose of Each Directory
+## Source Code (`src/companion/`)
 
-### src/companion/
+All application source code lives here. TypeScript files follow kebab-case naming.
 
-The core source directory containing all Companion platform code.
+### Entry Point
 
-| File | Purpose |
-|------|---------|
-| `bootstrap.ts` | Entry point. Creates CompanionApp, registers modules, starts the application. |
-| `companion-app.ts` | Singleton launcher. Creates UI, manages menu, delegates to ModuleManager. |
-| `companion-module.ts` | TypeScript interface for all modules. |
-| `companion-window.ts` | Abstract base class for draggable, resizable windows. |
-| `module-manager.ts` | Module registration and lifecycle management. |
-| `dev.ts` | Development mode detection and diagnostic logging. |
-| `brand-logo.ts` | Official SVG logo as a string constant. |
-| `brand-colors.ts` | Brand color constants. |
-| `finance-api-client.ts` | HTTP client for Finance API endpoints. |
-| `finance-controller.ts` | State management for Finance module. |
-| `finance-mapper.ts` | Response validation and transformation. |
-| `finance-shift.ts` | Shift time definitions and filtering logic. |
-| `finance-widget.ts` | Finance widget UI (extends CompanionWindow). |
-| `finance-widget.css.ts` | Finance widget CSS as a string constant. |
-| `index.ts` | Barrel exports for all public types and classes. |
+`bootstrap.ts` is the single entry point. It:
+- Creates ModuleManager
+- Registers modules
+- Creates CompanionApp
+- Starts the application
 
-### agencybooster-devtoolkit/
-
-Build tooling and configuration.
+### Core Components
 
 | File | Purpose |
 |------|---------|
-| `build-finance.mjs` | esbuild configuration for bundling. |
-| `package.json` | Node.js dependencies (esbuild, TypeScript). |
-| `tsconfig.json` | TypeScript compiler configuration. |
+| `companion-app.ts` | Main application — launcher UI, menu, delegates to ModuleManager |
+| `companion-module.ts` | `CompanionModule` interface definition |
+| `companion-window.ts` | Abstract base class for draggable, resizable windows |
+| `module-manager.ts` | Module registration and lifecycle management |
 
-### scripts/
-
-Built output directory.
+### Finance Module
 
 | File | Purpose |
 |------|---------|
-| `Companion.user.js` | Final bundled userscript ready for installation. |
+| `finance-widget.ts` | Finance UI widget (extends CompanionWindow) |
+| `finance-controller.ts` | Finance state management |
+| `finance-api-client.ts` | HTTP client for Finance API |
+| `finance-mapper.ts` | Response mapping and validation |
+| `finance-shift.ts` | Shift definitions and date calculation |
+| `finance-widget.css.ts` | Widget styles |
 
-### assets/
+### Shared
 
-Static resources (currently empty). Future use for icons, images, and other binary assets.
+| File | Purpose |
+|------|---------|
+| `dev.ts` | Development mode diagnostics |
+| `brand-logo.ts` | SVG logo (generated from `assets/logo.svg`) |
+| `brand-colors.ts` | Brand color constants |
+| `index.ts` | Barrel exports |
 
-### docs/
+## Extension (`extension/`)
+
+Chrome Extension (Manifest V3) runtime files.
+
+| File | Purpose |
+|------|---------|
+| `manifest.json` | Extension manifest — permissions, content scripts, service worker |
+| `content.ts` | Content script — DOM ready, duplicate prevention, bootstrap |
+| `background.ts` | Service worker — future messaging, storage, updates |
+| `icons/` | Generated PNG icons (from `assets/logo.svg`) |
+| `dist/` | Built extension output (gitignored) |
+
+## Assets (`assets/`)
+
+Static resources. The single source of truth for branding.
+
+| File | Purpose |
+|------|---------|
+| `logo.svg` | Master brand asset — all icons and logos derive from this |
+
+## Build Tooling (`agencybooster-devtoolkit/`)
+
+Build scripts and development configuration.
+
+| File | Purpose |
+|------|---------|
+| `build-finance.mjs` | Legacy userscript build |
+| `build-extension-dev.mjs` | Extension dev build (sourcemaps, no minify) |
+| `build-extension-prod.mjs` | Extension production build (minified) |
+| `generate-icons.mjs` | PNG icon generation from `assets/logo.svg` |
+| `tsconfig.json` | TypeScript configuration |
+| `package.json` | Development dependencies |
+
+## Documentation (`docs/`)
 
 Project documentation. See [Documentation Index](#documentation-index) for complete listing.
 
@@ -109,34 +154,6 @@ Project documentation. See [Documentation Index](#documentation-index) for compl
 
 - All source files: `kebab-case.ts`
 - CSS-in-JS files: `kebab-case.css.ts`
+- Build scripts: `build-*.mjs`
 - Documentation: `kebab-case.md`
-- Build scripts: `kebab-case.mjs`
-
-## Import Graph
-
-```mermaid
-graph TD
-    bootstrap --> CompanionApp
-    bootstrap --> ModuleManager
-    bootstrap --> FinanceModule
-
-    CompanionApp --> ModuleManager
-    CompanionApp --> CompanionWindow
-
-    FinanceModule --> FinanceWidget
-    FinanceWidget --> CompanionWindow
-    FinanceModule --> FinanceController
-
-    FinanceController --> FinanceApiClient
-    FinanceController --> FinanceMapper
-    FinanceController --> FinanceShift
-
-    FinanceMapper --> FinanceShift
-
-    FinanceWidget --> BrandLogo
-    FinanceWidget --> FinanceShift
-
-    style CompanionWindow fill:#2F6BFF,color:#fff
-    style ModuleManager fill:#2F6BFF,color:#fff
-    style CompanionApp fill:#2F6BFF,color:#fff
-```
+- No PascalCase or camelCase in filenames

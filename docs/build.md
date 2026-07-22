@@ -2,9 +2,72 @@
 
 ## Overview
 
-Companion uses esbuild for fast TypeScript bundling. The build pipeline is designed for development speed and will evolve for production security.
+Companion supports two deployment targets: Chrome Extension (primary) and Tampermonkey userscript (legacy). The build pipeline uses esbuild for fast TypeScript bundling.
 
-## Current Pipeline
+## Build Commands
+
+| Command | Purpose | Output |
+|---------|---------|--------|
+| `npm run build` | Legacy userscript | `scripts/Companion.user.js` |
+| `npm run build:ext` | Chrome Extension (dev) | `extension/dist/` |
+| `npm run build:ext:prod` | Chrome Extension (prod) | `extension/dist/` |
+| `npm run build:icons` | Generate PNG icons | `extension/icons/` |
+| `npm run dev` | Development build | `extension/dist/` |
+| `npm run lint` | ESLint check | Console output |
+| `npm run typecheck` | TypeScript check | Console output |
+| `npm run check` | Lint + typecheck | Console output |
+
+## Chrome Extension (Primary)
+
+```mermaid
+graph LR
+    A[TypeScript Source] --> B[esbuild]
+    B --> C[content.js]
+    B --> D[background.js]
+    C --> E[Chrome Extension]
+    D --> E
+```
+
+### Dev Build
+
+```bash
+npm run build:ext
+```
+
+| Property | Value |
+|----------|-------|
+| Entry points | `extension/content.ts`, `extension/background.ts` |
+| Output | `extension/dist/` |
+| Format | IIFE |
+| Target | ES2020 |
+| Sourcemaps | Yes |
+| Minification | No |
+
+### Production Build
+
+```bash
+npm run build:ext:prod
+```
+
+| Property | Value |
+|----------|-------|
+| Entry points | `extension/content.ts`, `extension/background.ts` |
+| Output | `extension/dist/` |
+| Format | IIFE |
+| Target | ES2020 |
+| Sourcemaps | No |
+| Minification | Yes |
+
+### Build Output
+
+| File | Purpose |
+|------|---------|
+| `extension/dist/manifest.json` | Chrome Extension manifest |
+| `extension/dist/content.js` | Content script bundle |
+| `extension/dist/background.js` | Service worker bundle |
+| `extension/dist/icons/` | Extension icons |
+
+## Legacy Userscript
 
 ```mermaid
 graph LR
@@ -16,7 +79,7 @@ graph LR
 ### Build Command
 
 ```bash
-node agencybooster-devtoolkit/build-finance.mjs
+npm run build
 ```
 
 ### Build Configuration
@@ -28,25 +91,24 @@ node agencybooster-devtoolkit/build-finance.mjs
 | Format | IIFE |
 | Platform | Browser |
 | Target | ES2020 |
-| Bundle size | ~72kb |
+| Bundle size | ~73kb |
 
-### Build Script
+**Status:** Legacy — retained for development and fallback until Chrome Extension becomes stable.
 
-```javascript
-// agencybooster-devtoolkit/build-finance.mjs
-import { build } from "esbuild";
+## Icon Generation
 
-await build({
-    entryPoints: ["../src/companion/bootstrap.ts"],
-    bundle: true,
-    outfile: "../scripts/Companion.user.js",
-    format: "iife",
-    platform: "browser",
-    target: "es2020",
-    minify: false,
-    sourcemap: false,
-});
+```bash
+npm run build:icons
 ```
+
+Generates PNG icons from `assets/logo.svg`. Requires `sharp` for high-quality rendering. Falls back to placeholder PNGs if sharp is not installed.
+
+| Size | Usage |
+|------|-------|
+| 16x16 | Favicon, browser tab |
+| 32x32 | Extension icon |
+| 48x48 | Chrome Web Store listing |
+| 128x128 | Chrome Web Store detail |
 
 ## TypeScript Configuration
 
@@ -60,76 +122,52 @@ await build({
 
 ## Development Workflow
 
-1. Edit source files in `src/companion/`
-2. Run build command
-3. Install updated `scripts/Companion.user.js` in Tampermonkey
-4. Refresh target page
-5. Enable dev mode: `localStorage.setItem("ab-dev", "1")`
+### Chrome Extension
 
-## Future Production Pipeline
+1. `npm run dev` — build extension
+2. Open `chrome://extensions`
+3. Enable "Developer mode"
+4. Click "Load unpacked"
+5. Select `extension/dist/`
+6. Navigate to GoldenBride CRM
+7. Companion injects automatically
 
-```mermaid
-graph LR
-    A[TypeScript] --> B[esbuild]
-    B --> C[Terser]
-    C --> D[Obfuscation]
-    D --> E[Packaging]
-    E --> F[Chrome Extension]
+### Reload After Changes
+
+1. `npm run dev` — rebuild
+2. Click refresh icon on extension card in `chrome://extensions`
+3. Reload CRM page
+
+### Debug Content Script
+
+1. Open CRM page
+2. Open DevTools (F12)
+3. Console tab — filter by `[Companion]`
+
+### Debug Background Service Worker
+
+1. Open `chrome://extensions`
+2. Click "Inspect views: service worker" on Companion card
+3. DevTools opens for background context
+
+### Enable Dev Mode
+
+```javascript
+localStorage.setItem("ab-dev", "1");
 ```
 
-### Stage 1: TypeScript Compilation
+## Quality Checks
 
-- Type checking with `tsc --noEmit`
-- Strict mode enforced
-- No type errors in production
+Before each release:
 
-### Stage 2: esbuild Bundling
-
-- Single entry point: `bootstrap.ts`
-- All modules bundled into one file
-- Tree-shaking for unused code
-- Dead code elimination
-
-### Stage 3: Terser Minification
-
-- Variable name mangling
-- Whitespace removal
-- Code compression
-- Console statement removal
-
-### Stage 4: Obfuscation
-
-- String array encoding
-- Control flow flattening
-- Dead code injection
-- Variable randomization
-
-**Note:** Obfuscation provides deterrence, not security. See [Security](security.md).
-
-### Stage 5: Packaging
-
-- Chrome Extension Manifest V3
-- Icon generation from `brand-logo.ts`
-- Permission declarations
-- Content script registration
-
-## Build Output
-
-### Current
-
-| File | Size | Purpose |
-|------|------|---------|
-| `scripts/Companion.user.js` | ~72kb | Tampermonkey userscript |
-
-### Future
-
-| File | Purpose |
-|------|---------|
-| `dist/manifest.json` | Chrome Extension manifest |
-| `dist/background.js` | Service worker |
-| `dist/content.js` | Content script |
-| `dist/companion.js` | Bundled application |
-| `dist/icons/` | Extension icons |
+1. `npm run check` — lint + typecheck passes
+2. `npm run build` — userscript builds
+3. `npm run build:ext` — extension builds
+4. `npm run build:ext:prod` — production build succeeds
+5. Extension loads in Chrome without errors
+6. Content script injects on GoldenBride CRM
+7. Finance module opens and displays data
+8. No console errors in production mode
 
 ## Performance
 
@@ -151,14 +189,3 @@ graph LR
 | Parse time | < 50ms |
 | Initialization | < 100ms |
 | First paint | < 200ms |
-
-## Quality Checks
-
-Before each release:
-
-1. TypeScript compiles without errors
-2. Bundle size within budget
-3. No console errors in production mode
-4. All keyboard shortcuts functional
-5. Widget state persists across sessions
-6. Dev mode diagnostics gated correctly
