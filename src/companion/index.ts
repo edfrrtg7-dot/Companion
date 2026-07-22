@@ -12,6 +12,10 @@ export type { CompanionModule } from "./companion-module";
 // ModuleManager — module registration and lifecycle
 export { ModuleManager } from "./module-manager";
 
+// CompanionWindow — base class for draggable, resizable, collapsible windows
+export { CompanionWindow } from "./companion-window";
+export type { WindowState, CompanionWindowConfig } from "./companion-window";
+
 // FinanceApiClient — HTTP communication layer
 export { FinanceApiClient } from "./finance-api-client";
 export type { FinanceApiResponse, FinanceApiClientConfig } from "./finance-api-client";

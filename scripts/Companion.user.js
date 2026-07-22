@@ -1052,34 +1052,17 @@
     }
   };
 
-  // ../src/companion/brand-logo.ts
-  var COMPANION_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 505 494">
-  <g transform="translate(0,494) scale(0.1,-0.1)" fill="#2F6BFF" stroke="none">
-    <path d="M2175 4453 c-132 -21 -369 -81 -453 -114 -402 -159 -744 -435 -977 -789 -135 -205 -251 -468 -296 -670 -4 -19 -14 -66 -23 -105 -35 -153 -52 -408 -37 -551 47 -444 167 -752 431 -1109 115 -155 392 -405 538 -486 27 -14 66 -37 88 -51 167 -102 460 -196 741 -237 92 -14 363 -14 473 -1 115 14 233 41 223 50 -4 5 -87 10 -183 13 -163 4 -184 7 -309 42 -276 76 -447 169 -656 358 -49 45 -103 97 -120 116 -16 19 -37 42 -46 51 -19 20 -149 214 -149 223 0 4 -18 36 -40 72 -22 36 -40 70 -40 75 0 6 -4 10 -8 10 -5 0 -9 6 -10 13 -1 6 -19 64 -41 128 -36 106 -79 267 -96 364 -21 116 -10 419 20 572 14 70 73 267 95 318 116 270 267 484 454 644 217 185 473 315 730 369 108 23 144 26 331 27 185 0 223 -3 315 -23 234 -53 435 -132 648 -256 63 -37 92 -48 123 -48 78 1 172 66 183 127 10 53 -31 111 -194 276 -152 153 -210 200 -340 275 -36 21 -68 43 -72 48 -5 7 -8 7 -8 1 0 -6 -3 -6 -8 1 -22 32 -233 135 -363 177 -95 31 -190 54 -369 88 -99 18 -447 20 -555 2z"/>
-  </g>
-</svg>`;
-  var COMPANION_LOGO_DATA_URI = `data:image/svg+xml,${encodeURIComponent(COMPANION_LOGO_SVG)}`;
-
-  // ../src/companion/finance-widget.ts
-  var DEFAULT_CLASS_PREFIX = "ab-finance";
+  // ../src/companion/companion-window.ts
+  var DEFAULT_CLASS_PREFIX = "ab-window";
   var MIN_WIDTH = 280;
   var MIN_HEIGHT = 200;
   var MAX_WIDTH = 700;
   var MAX_HEIGHT = 600;
   var COLLAPSED_WIDTH = 330;
   var COLLAPSED_HEIGHT = 44;
-  var STORAGE_KEY2 = "ab-finance-widget-state";
-  var DEFAULT_STATE = {
-    x: 24,
-    y: 24,
-    width: 360,
-    height: 380,
-    collapsed: false,
-    hidden: false
-  };
-  function loadState() {
+  function loadState(storageKey) {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY2);
+      const raw = localStorage.getItem(storageKey);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (typeof parsed === "object" && parsed !== null && typeof parsed.x === "number" && typeof parsed.y === "number" && typeof parsed.width === "number" && parsed.width > 0 && typeof parsed.height === "number" && parsed.height > 0 && typeof parsed.collapsed === "boolean" && typeof parsed.hidden === "boolean") {
@@ -1089,23 +1072,20 @@
     }
     return null;
   }
-  function saveState(state) {
+  function saveState(storageKey, state) {
     try {
-      localStorage.setItem(STORAGE_KEY2, JSON.stringify(state));
+      localStorage.setItem(storageKey, JSON.stringify(state));
     } catch {
     }
   }
-  var FinanceWidget = class {
-    constructor(controller2, config = {}) {
-      __publicField(this, "controller");
+  var CompanionWindow = class {
+    constructor(config) {
       __publicField(this, "container");
       __publicField(this, "classPrefix");
-      __publicField(this, "unsubscribe");
+      __publicField(this, "storageKey");
+      __publicField(this, "defaultState");
       __publicField(this, "onClose");
       __publicField(this, "root", null);
-      __publicField(this, "refreshBtn", null);
-      __publicField(this, "shiftBtn", null);
-      __publicField(this, "shiftDropdown", null);
       __publicField(this, "contentEl", null);
       __publicField(this, "collapseBtn", null);
       __publicField(this, "closeBtn", null);
@@ -1137,12 +1117,20 @@
           this.onClose?.();
         }
       });
-      // -------------------------------------------------------------------------
-      // State rendering
-      // -------------------------------------------------------------------------
-      __publicField(this, "onStateChange", (state) => {
+      __publicField(this, "onCollapseClick", () => {
         if (this.destroyed) return;
-        this.render(state);
+        this.toggleCollapse();
+      });
+      __publicField(this, "onCloseClick", () => {
+        if (this.destroyed) return;
+        this.hide();
+        this.onClose?.();
+      });
+      __publicField(this, "onHeaderDoubleClick", (e) => {
+        if (this.destroyed) return;
+        const target = e.target;
+        if (target.closest("button")) return;
+        this.toggleCollapse();
       });
       __publicField(this, "onDragPointerDown", (e) => {
         if (this.destroyed || !this.root) return;
@@ -1233,72 +1221,43 @@
         this.persistState();
         this.removeResizeListeners();
       });
-      __publicField(this, "onCollapseClick", () => {
-        if (this.destroyed) return;
-        this.toggleCollapse();
-      });
-      __publicField(this, "onCloseClick", () => {
-        if (this.destroyed) return;
-        this.hide();
-        this.onClose?.();
-      });
-      __publicField(this, "onHeaderDoubleClick", (e) => {
-        if (this.destroyed) return;
-        const target = e.target;
-        if (target.closest("button")) return;
-        this.toggleCollapse();
-      });
-      __publicField(this, "onRefreshClick", () => {
-        if (this.destroyed) return;
-        this.controller.refresh();
-      });
-      __publicField(this, "onShiftToggle", () => {
-        if (this.destroyed || !this.shiftDropdown) return;
-        const isVisible = this.shiftDropdown.classList.contains("open");
-        if (isVisible) {
-          this.shiftDropdown.classList.remove("open");
-        } else {
-          this.shiftDropdown.classList.add("open");
-        }
-      });
-      __publicField(this, "onShiftSelect", (event) => {
-        if (this.destroyed) return;
-        const target = event.currentTarget;
-        const shift = target.dataset.shift;
-        if (shift && (shift === "morning" || shift === "day" || shift === "night")) {
-          this.controller.setShift(shift);
-          if (this.shiftDropdown) {
-            this.shiftDropdown.classList.remove("open");
-          }
-        }
-      });
-      this.controller = controller2;
       this.container = config.container ?? document.body;
       this.classPrefix = config.classPrefix ?? DEFAULT_CLASS_PREFIX;
+      this.storageKey = config.storageKey;
+      this.defaultState = config.defaultState;
       this.onClose = config.onClose;
-      const saved = loadState() ?? DEFAULT_STATE;
+      const saved = loadState(this.storageKey) ?? this.defaultState;
       this.win = { ...saved };
-      this.unsubscribe = this.controller.subscribe(this.onStateChange);
-      this.render(this.controller.getState());
-      this.controller.refresh();
+    }
+    // -------------------------------------------------------------------------
+    // Initialization — called by subclass after creating DOM
+    // -------------------------------------------------------------------------
+    /**
+     * Attach window behavior to DOM elements.
+     * Must be called by subclass after creating root, contentEl, collapseBtn, closeBtn.
+     */
+    initWindow(dragHandle, resizeHandle) {
+      dragHandle.addEventListener("pointerdown", this.onDragPointerDown);
+      dragHandle.addEventListener("dblclick", this.onHeaderDoubleClick);
+      resizeHandle.addEventListener("pointerdown", this.onResizePointerDown);
+      this.collapseBtn?.addEventListener("click", this.onCollapseClick);
+      this.closeBtn?.addEventListener("click", this.onCloseClick);
+      if (!this.win.hidden) {
+        this.installKeyboardListener();
+      }
     }
     // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------
-    /** Remove the widget from the DOM and unsubscribe from the controller. */
+    /** Remove the widget from the DOM and clean up listeners. */
     destroy() {
       if (this.destroyed) return;
       this.destroyed = true;
       this.cancelDrag();
       this.cancelResize();
-      this.unsubscribe();
-      this.controller.cancelPending();
       this.removeKeyboardListener();
       this.root?.remove();
       this.root = null;
-      this.refreshBtn = null;
-      this.shiftBtn = null;
-      this.shiftDropdown = null;
       this.contentEl = null;
       this.collapseBtn = null;
       this.closeBtn = null;
@@ -1392,7 +1351,7 @@
       if (this.win.width <= 0 || this.win.height <= 0) {
         return;
       }
-      saveState({ ...this.win });
+      saveState(this.storageKey, { ...this.win });
     }
     // -------------------------------------------------------------------------
     // Keyboard shortcuts
@@ -1408,114 +1367,13 @@
         this.boundOnKeyDown = null;
       }
     }
-    render(state) {
-      if (!this.root) {
-        this.createRoot();
-      }
-      this.updateRefreshButton(state.status);
-      this.updateShiftButton(state.shift);
-      if (!this.win.collapsed) {
-        this.updateContent(state);
-      }
-    }
     // -------------------------------------------------------------------------
-    // DOM creation
+    // Window controls
     // -------------------------------------------------------------------------
-    createRoot() {
-      const saved = loadState() ?? DEFAULT_STATE;
-      const root = document.createElement("div");
-      root.className = this.classPrefix;
-      root.id = `${this.classPrefix}-widget`;
-      root.style.left = saved.x + "px";
-      root.style.top = saved.y + "px";
-      root.style.bottom = "auto";
-      root.style.right = "auto";
-      if (saved.hidden) {
-        root.style.display = "none";
-      }
-      if (saved.collapsed) {
-        root.classList.add(`${this.classPrefix}-collapsed`);
-        root.style.width = COLLAPSED_WIDTH + "px";
-        root.style.height = COLLAPSED_HEIGHT + "px";
-        root.style.overflow = "hidden";
-      } else {
-        root.style.width = saved.width + "px";
-        root.style.height = saved.height + "px";
-      }
-      const dragHandle = document.createElement("div");
-      dragHandle.className = `${this.classPrefix}-header`;
-      dragHandle.id = `${this.classPrefix}-drag-handle`;
-      const title = document.createElement("div");
-      title.className = `${this.classPrefix}-header-title`;
-      const logo = document.createElement("span");
-      logo.className = `${this.classPrefix}-logo`;
-      logo.innerHTML = COMPANION_LOGO_SVG;
-      const titleText = document.createElement("span");
-      titleText.textContent = "FINANCE";
-      title.appendChild(logo);
-      title.appendChild(titleText);
-      const actions = document.createElement("div");
-      actions.className = `${this.classPrefix}-header-actions`;
-      const shiftBtn = document.createElement("button");
-      shiftBtn.className = `${this.classPrefix}-shift-btn`;
-      shiftBtn.title = "Shift";
-      const shiftDropdown = document.createElement("div");
-      shiftDropdown.className = `${this.classPrefix}-shift-dropdown`;
-      for (const def of FinanceShift.getAllDefinitions()) {
-        const option = document.createElement("button");
-        option.className = `${this.classPrefix}-shift-option`;
-        option.dataset.shift = def.type;
-        option.innerHTML = `<span class="${this.classPrefix}-shift-name">${def.label}</span><span class="${this.classPrefix}-shift-time">${def.timeDisplay}</span>`;
-        option.addEventListener("click", this.onShiftSelect);
-        shiftDropdown.appendChild(option);
-      }
-      const refreshBtn = document.createElement("button");
-      refreshBtn.className = `${this.classPrefix}-btn`;
-      refreshBtn.title = "Refresh";
-      refreshBtn.textContent = "\u21BB";
-      const collapseBtn = document.createElement("button");
-      collapseBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-collapse-btn`;
-      collapseBtn.title = "Collapse";
-      collapseBtn.textContent = this.win.collapsed ? "\u25B6" : "\u25BC";
-      const closeBtn = document.createElement("button");
-      closeBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-close-btn`;
-      closeBtn.title = "Close";
-      closeBtn.textContent = "\u2715";
-      actions.appendChild(shiftBtn);
-      actions.appendChild(shiftDropdown);
-      actions.appendChild(refreshBtn);
-      actions.appendChild(collapseBtn);
-      actions.appendChild(closeBtn);
-      dragHandle.appendChild(title);
-      dragHandle.appendChild(actions);
-      const content = document.createElement("div");
-      content.className = `${this.classPrefix}-body`;
-      if (saved.collapsed) {
-        content.style.display = "none";
-      }
-      const resizeHandle = document.createElement("div");
-      resizeHandle.className = `${this.classPrefix}-resize-handle`;
-      root.appendChild(dragHandle);
-      root.appendChild(content);
-      root.appendChild(resizeHandle);
-      this.root = root;
-      this.refreshBtn = refreshBtn;
-      this.shiftBtn = shiftBtn;
-      this.shiftDropdown = shiftDropdown;
-      this.contentEl = content;
-      this.collapseBtn = collapseBtn;
-      this.closeBtn = closeBtn;
-      dragHandle.addEventListener("pointerdown", this.onDragPointerDown);
-      dragHandle.addEventListener("dblclick", this.onHeaderDoubleClick);
-      resizeHandle.addEventListener("pointerdown", this.onResizePointerDown);
-      shiftBtn.addEventListener("click", this.onShiftToggle);
-      refreshBtn.addEventListener("click", this.onRefreshClick);
-      collapseBtn.addEventListener("click", this.onCollapseClick);
-      closeBtn.addEventListener("click", this.onCloseClick);
-      this.container.appendChild(root);
-      if (!saved.hidden) {
-        this.installKeyboardListener();
-      }
+    updateCollapseButton() {
+      if (!this.collapseBtn) return;
+      this.collapseBtn.textContent = this.win.collapsed ? "\u25B6" : "\u25BC";
+      this.collapseBtn.title = this.win.collapsed ? "Expand" : "Collapse";
     }
     // -------------------------------------------------------------------------
     // Drag handling — bulletproof state management
@@ -1563,13 +1421,192 @@
       this.boundOnResizePointerMove = null;
       this.boundOnResizePointerUp = null;
     }
+  };
+
+  // ../src/companion/brand-logo.ts
+  var COMPANION_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 505 494">
+  <g transform="translate(0,494) scale(0.1,-0.1)" fill="#2F6BFF" stroke="none">
+    <path d="M2175 4453 c-132 -21 -369 -81 -453 -114 -402 -159 -744 -435 -977 -789 -135 -205 -251 -468 -296 -670 -4 -19 -14 -66 -23 -105 -35 -153 -52 -408 -37 -551 47 -444 167 -752 431 -1109 115 -155 392 -405 538 -486 27 -14 66 -37 88 -51 167 -102 460 -196 741 -237 92 -14 363 -14 473 -1 115 14 233 41 223 50 -4 5 -87 10 -183 13 -163 4 -184 7 -309 42 -276 76 -447 169 -656 358 -49 45 -103 97 -120 116 -16 19 -37 42 -46 51 -19 20 -149 214 -149 223 0 4 -18 36 -40 72 -22 36 -40 70 -40 75 0 6 -4 10 -8 10 -5 0 -9 6 -10 13 -1 6 -19 64 -41 128 -36 106 -79 267 -96 364 -21 116 -10 419 20 572 14 70 73 267 95 318 116 270 267 484 454 644 217 185 473 315 730 369 108 23 144 26 331 27 185 0 223 -3 315 -23 234 -53 435 -132 648 -256 63 -37 92 -48 123 -48 78 1 172 66 183 127 10 53 -31 111 -194 276 -152 153 -210 200 -340 275 -36 21 -68 43 -72 48 -5 7 -8 7 -8 1 0 -6 -3 -6 -8 1 -22 32 -233 135 -363 177 -95 31 -190 54 -369 88 -99 18 -447 20 -555 2z"/>
+  </g>
+</svg>`;
+  var COMPANION_LOGO_DATA_URI = `data:image/svg+xml,${encodeURIComponent(COMPANION_LOGO_SVG)}`;
+
+  // ../src/companion/finance-widget.ts
+  var DEFAULT_CLASS_PREFIX2 = "ab-finance";
+  var STORAGE_KEY2 = "ab-finance-widget-state";
+  var DEFAULT_STATE = {
+    x: 24,
+    y: 24,
+    width: 360,
+    height: 380,
+    collapsed: false,
+    hidden: false
+  };
+  var FinanceWidget = class extends CompanionWindow {
+    constructor(controller2, config = {}) {
+      const windowConfig = {
+        container: config.container,
+        classPrefix: config.classPrefix ?? DEFAULT_CLASS_PREFIX2,
+        storageKey: STORAGE_KEY2,
+        defaultState: DEFAULT_STATE,
+        onClose: config.onClose
+      };
+      super(windowConfig);
+      __publicField(this, "controller");
+      __publicField(this, "unsubscribe");
+      __publicField(this, "refreshBtn", null);
+      __publicField(this, "shiftBtn", null);
+      __publicField(this, "shiftDropdown", null);
+      // -------------------------------------------------------------------------
+      // State rendering
+      // -------------------------------------------------------------------------
+      __publicField(this, "onStateChange", (state) => {
+        if (this.destroyed) return;
+        this.render(state);
+      });
+      __publicField(this, "onRefreshClick", () => {
+        if (this.destroyed) return;
+        this.controller.refresh();
+      });
+      __publicField(this, "onShiftToggle", () => {
+        if (this.destroyed || !this.shiftDropdown) return;
+        const isVisible = this.shiftDropdown.classList.contains("open");
+        if (isVisible) {
+          this.shiftDropdown.classList.remove("open");
+        } else {
+          this.shiftDropdown.classList.add("open");
+        }
+      });
+      __publicField(this, "onShiftSelect", (event) => {
+        if (this.destroyed) return;
+        const target = event.currentTarget;
+        const shift = target.dataset.shift;
+        if (shift && (shift === "morning" || shift === "day" || shift === "night")) {
+          this.controller.setShift(shift);
+          if (this.shiftDropdown) {
+            this.shiftDropdown.classList.remove("open");
+          }
+        }
+      });
+      this.controller = controller2;
+      this.unsubscribe = this.controller.subscribe(this.onStateChange);
+      this.render(this.controller.getState());
+      this.controller.refresh();
+    }
     // -------------------------------------------------------------------------
-    // Window controls
+    // Public API
     // -------------------------------------------------------------------------
-    updateCollapseButton() {
-      if (!this.collapseBtn) return;
-      this.collapseBtn.textContent = this.win.collapsed ? "\u25B6" : "\u25BC";
-      this.collapseBtn.title = this.win.collapsed ? "Expand" : "Collapse";
+    /** Remove the widget from the DOM and unsubscribe from the controller. */
+    destroy() {
+      if (this.destroyed) return;
+      this.unsubscribe();
+      this.controller.cancelPending();
+      this.refreshBtn = null;
+      this.shiftBtn = null;
+      this.shiftDropdown = null;
+      super.destroy();
+    }
+    render(state) {
+      if (!this.root) {
+        this.createRoot();
+      }
+      this.updateRefreshButton(state.status);
+      this.updateShiftButton(state.shift);
+      if (!this.win.collapsed) {
+        this.updateContent(state);
+      }
+    }
+    // -------------------------------------------------------------------------
+    // DOM creation
+    // -------------------------------------------------------------------------
+    createRoot() {
+      const saved = this.win;
+      const root = document.createElement("div");
+      root.className = this.classPrefix;
+      root.id = `${this.classPrefix}-widget`;
+      root.style.left = saved.x + "px";
+      root.style.top = saved.y + "px";
+      root.style.bottom = "auto";
+      root.style.right = "auto";
+      if (saved.hidden) {
+        root.style.display = "none";
+      }
+      if (saved.collapsed) {
+        root.classList.add(`${this.classPrefix}-collapsed`);
+        root.style.width = "330px";
+        root.style.height = "44px";
+        root.style.overflow = "hidden";
+      } else {
+        root.style.width = saved.width + "px";
+        root.style.height = saved.height + "px";
+      }
+      const dragHandle = document.createElement("div");
+      dragHandle.className = `${this.classPrefix}-header`;
+      dragHandle.id = `${this.classPrefix}-drag-handle`;
+      const title = document.createElement("div");
+      title.className = `${this.classPrefix}-header-title`;
+      const logo = document.createElement("span");
+      logo.className = `${this.classPrefix}-logo`;
+      logo.innerHTML = COMPANION_LOGO_SVG;
+      const titleText = document.createElement("span");
+      titleText.textContent = "FINANCE";
+      title.appendChild(logo);
+      title.appendChild(titleText);
+      const actions = document.createElement("div");
+      actions.className = `${this.classPrefix}-header-actions`;
+      const shiftBtn = document.createElement("button");
+      shiftBtn.className = `${this.classPrefix}-shift-btn`;
+      shiftBtn.title = "Shift";
+      const shiftDropdown = document.createElement("div");
+      shiftDropdown.className = `${this.classPrefix}-shift-dropdown`;
+      for (const def of FinanceShift.getAllDefinitions()) {
+        const option = document.createElement("button");
+        option.className = `${this.classPrefix}-shift-option`;
+        option.dataset.shift = def.type;
+        option.innerHTML = `<span class="${this.classPrefix}-shift-name">${def.label}</span><span class="${this.classPrefix}-shift-time">${def.timeDisplay}</span>`;
+        option.addEventListener("click", this.onShiftSelect);
+        shiftDropdown.appendChild(option);
+      }
+      const refreshBtn = document.createElement("button");
+      refreshBtn.className = `${this.classPrefix}-btn`;
+      refreshBtn.title = "Refresh";
+      refreshBtn.textContent = "\u21BB";
+      const collapseBtn = document.createElement("button");
+      collapseBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-collapse-btn`;
+      collapseBtn.title = "Collapse";
+      collapseBtn.textContent = saved.collapsed ? "\u25B6" : "\u25BC";
+      const closeBtn = document.createElement("button");
+      closeBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-close-btn`;
+      closeBtn.title = "Close";
+      closeBtn.textContent = "\u2715";
+      actions.appendChild(shiftBtn);
+      actions.appendChild(shiftDropdown);
+      actions.appendChild(refreshBtn);
+      actions.appendChild(collapseBtn);
+      actions.appendChild(closeBtn);
+      dragHandle.appendChild(title);
+      dragHandle.appendChild(actions);
+      const content = document.createElement("div");
+      content.className = `${this.classPrefix}-body`;
+      if (saved.collapsed) {
+        content.style.display = "none";
+      }
+      const resizeHandle = document.createElement("div");
+      resizeHandle.className = `${this.classPrefix}-resize-handle`;
+      root.appendChild(dragHandle);
+      root.appendChild(content);
+      root.appendChild(resizeHandle);
+      this.root = root;
+      this.refreshBtn = refreshBtn;
+      this.shiftBtn = shiftBtn;
+      this.shiftDropdown = shiftDropdown;
+      this.contentEl = content;
+      this.collapseBtn = collapseBtn;
+      this.closeBtn = closeBtn;
+      shiftBtn.addEventListener("click", this.onShiftToggle);
+      refreshBtn.addEventListener("click", this.onRefreshClick);
+      this.container.appendChild(root);
+      this.initWindow(dragHandle, resizeHandle);
     }
     // -------------------------------------------------------------------------
     // State-based rendering

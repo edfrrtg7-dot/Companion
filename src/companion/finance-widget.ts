@@ -5,19 +5,17 @@
  * Subscribes to state changes and renders loading/error/loaded states.
  * Includes a shift selector for Morning / Day / Night intervals.
  *
- * Window management uses a single FinanceWindowState model.
- * JavaScript controls geometry; CSS controls appearance only.
- *
- * Two independent layouts: Expanded and Collapsed.
- * Collapsed uses fixed constants — no DOM measurement.
+ * Inherits window management (drag, resize, collapse, persist) from CompanionWindow.
  *
  * Non-responsibilities:
  *   - HTTP communication (see FinanceApiClient)
  *   - Response mapping (see FinanceMapper)
  *   - State management (see FinanceController)
  *   - Business logic, caching, persistence
+ *   - Window management (see CompanionWindow)
  */
 
+import { CompanionWindow, CompanionWindowConfig } from "./companion-window";
 import { FinanceController, FinanceState, FinanceStateListener } from "./finance-controller";
 import { FinanceTransaction } from "./finance-mapper";
 import { FinanceShift, ShiftType } from "./finance-shift";
@@ -26,16 +24,6 @@ import { COMPANION_LOGO_SVG } from "./brand-logo";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-/** Persisted widget window state — single source of truth. */
-interface FinanceWindowState {
-    readonly x: number;
-    readonly y: number;
-    readonly width: number;
-    readonly height: number;
-    readonly collapsed: boolean;
-    readonly hidden: boolean;
-}
 
 /** Configuration for FinanceWidget. */
 export interface FinanceWidgetConfig {
@@ -52,18 +40,9 @@ export interface FinanceWidgetConfig {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_CLASS_PREFIX = "ab-finance";
-
-const MIN_WIDTH = 280;
-const MIN_HEIGHT = 200;
-const MAX_WIDTH = 700;
-const MAX_HEIGHT = 600;
-
-const COLLAPSED_WIDTH = 330;
-const COLLAPSED_HEIGHT = 44;
-
 const STORAGE_KEY = "ab-finance-widget-state";
 
-const DEFAULT_STATE: FinanceWindowState = {
+const DEFAULT_STATE = {
     x: 24,
     y: 24,
     width: 360,
@@ -73,93 +52,27 @@ const DEFAULT_STATE: FinanceWindowState = {
 };
 
 // ---------------------------------------------------------------------------
-// Persistence
-// ---------------------------------------------------------------------------
-
-function loadState(): FinanceWindowState | null {
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (
-            typeof parsed === "object" &&
-            parsed !== null &&
-            typeof parsed.x === "number" &&
-            typeof parsed.y === "number" &&
-            typeof parsed.width === "number" && parsed.width > 0 &&
-            typeof parsed.height === "number" && parsed.height > 0 &&
-            typeof parsed.collapsed === "boolean" &&
-            typeof parsed.hidden === "boolean"
-        ) {
-            return parsed as FinanceWindowState;
-        }
-    } catch {
-        // localStorage unavailable or corrupted
-    }
-    return null;
-}
-
-function saveState(state: FinanceWindowState): void {
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-        // localStorage full or unavailable
-    }
-}
-
-// ---------------------------------------------------------------------------
 // FinanceWidget
 // ---------------------------------------------------------------------------
 
-export class FinanceWidget {
+export class FinanceWidget extends CompanionWindow {
     private readonly controller: FinanceController;
-    private readonly container: HTMLElement;
-    private readonly classPrefix: string;
     private readonly unsubscribe: () => void;
-    private readonly onClose?: () => void;
-    private root: HTMLDivElement | null = null;
     private refreshBtn: HTMLButtonElement | null = null;
     private shiftBtn: HTMLButtonElement | null = null;
     private shiftDropdown: HTMLDivElement | null = null;
-    private contentEl: HTMLDivElement | null = null;
-    private collapseBtn: HTMLButtonElement | null = null;
-    private closeBtn: HTMLButtonElement | null = null;
-    private destroyed = false;
-
-    // Window state model — single source of truth
-    private win: FinanceWindowState;
-
-    // Keyboard handler
-    private boundOnKeyDown: ((e: KeyboardEvent) => void) | null = null;
-
-    // Drag state
-    private isDragging = false;
-    private dragStartX = 0;
-    private dragStartY = 0;
-    private dragOrigX = 0;
-    private dragOrigY = 0;
-    private boundOnDragPointerMove: ((e: PointerEvent) => void) | null = null;
-    private boundOnDragPointerUp: (() => void) | null = null;
-
-    // Resize state
-    private isResizing = false;
-    private resizeStartX = 0;
-    private resizeStartY = 0;
-    private resizeOrigW = 0;
-    private resizeOrigH = 0;
-    private boundOnResizePointerMove: ((e: PointerEvent) => void) | null = null;
-    private boundOnResizePointerUp: (() => void) | null = null;
 
     constructor(controller: FinanceController, config: FinanceWidgetConfig = {}) {
+        const windowConfig: CompanionWindowConfig = {
+            container: config.container,
+            classPrefix: config.classPrefix ?? DEFAULT_CLASS_PREFIX,
+            storageKey: STORAGE_KEY,
+            defaultState: DEFAULT_STATE,
+            onClose: config.onClose,
+        };
+        super(windowConfig);
+
         this.controller = controller;
-        this.container = config.container ?? document.body;
-        this.classPrefix = config.classPrefix ?? DEFAULT_CLASS_PREFIX;
-        this.onClose = config.onClose;
-
-        // Load persisted state
-        const saved = loadState() ?? DEFAULT_STATE;
-        this.win = { ...saved };
-
         this.unsubscribe = this.controller.subscribe(this.onStateChange);
         this.render(this.controller.getState());
         this.controller.refresh();
@@ -172,162 +85,13 @@ export class FinanceWidget {
     /** Remove the widget from the DOM and unsubscribe from the controller. */
     destroy(): void {
         if (this.destroyed) return;
-        this.destroyed = true;
-        this.cancelDrag();
-        this.cancelResize();
         this.unsubscribe();
         this.controller.cancelPending();
-        this.removeKeyboardListener();
-        this.root?.remove();
-        this.root = null;
         this.refreshBtn = null;
         this.shiftBtn = null;
         this.shiftDropdown = null;
-        this.contentEl = null;
-        this.collapseBtn = null;
-        this.closeBtn = null;
+        super.destroy();
     }
-
-    /** Check if the widget has been destroyed. */
-    get isDestroyed(): boolean {
-        return this.destroyed;
-    }
-
-    /** Show the widget (after close). */
-    show(): void {
-        if (this.destroyed || !this.root) return;
-        this.win = { ...this.win, hidden: false };
-        this.root.style.display = "";
-        this.installKeyboardListener();
-        this.persistState();
-    }
-
-    /** Hide the widget (close). */
-    hide(): void {
-        if (this.destroyed || !this.root) return;
-        this.cancelDrag();
-        this.cancelResize();
-        this.win = { ...this.win, hidden: true };
-        this.root.style.display = "none";
-        this.removeKeyboardListener();
-        this.persistState();
-    }
-
-    /** Check if widget is visible. */
-    get isVisible(): boolean {
-        return !this.win.hidden;
-    }
-
-    /** Check if widget is collapsed. */
-    get isCollapsed(): boolean {
-        return this.win.collapsed;
-    }
-
-    // -------------------------------------------------------------------------
-    // Collapse / Expand — two independent layouts
-    // -------------------------------------------------------------------------
-
-    /** Expand the widget. Restores exact previous dimensions from state. */
-    expand(): void {
-        if (!this.win.collapsed || !this.root || !this.contentEl) return;
-
-        // Restore body
-        this.contentEl.style.display = "";
-        this.contentEl.style.overflow = "";
-        this.contentEl.style.height = "";
-        this.contentEl.style.minHeight = "";
-        this.contentEl.style.padding = "";
-
-        // Restore geometry from state
-        this.root.style.width = this.win.width + "px";
-        this.root.style.height = this.win.height + "px";
-        this.root.style.minHeight = "";
-        this.root.style.minWidth = "";
-        this.root.style.overflow = "";
-
-        // Update state
-        this.win = { ...this.win, collapsed: false };
-        this.root.classList.remove(`${this.classPrefix}-collapsed`);
-        this.updateCollapseButton();
-        this.persistState();
-    }
-
-    /**
-     * Collapse the widget to a compact title bar.
-     * Uses fixed constants — no DOM measurement.
-     */
-    collapse(): void {
-        if (this.win.collapsed || !this.root || !this.contentEl) return;
-
-        // Save current expanded dimensions to state
-        const rect = this.root.getBoundingClientRect();
-        this.win = {
-            ...this.win,
-            width: Math.round(rect.width),
-            height: Math.round(rect.height),
-            collapsed: true,
-        };
-
-        // Hide body completely
-        this.contentEl.style.display = "none";
-
-        // Set fixed collapsed dimensions
-        this.root.style.width = COLLAPSED_WIDTH + "px";
-        this.root.style.height = COLLAPSED_HEIGHT + "px";
-        this.root.style.minHeight = COLLAPSED_HEIGHT + "px";
-        this.root.style.minWidth = COLLAPSED_WIDTH + "px";
-        this.root.style.overflow = "hidden";
-
-        // Update UI
-        this.root.classList.add(`${this.classPrefix}-collapsed`);
-        this.updateCollapseButton();
-        this.persistState();
-    }
-
-    /** Toggle collapse state. */
-    toggleCollapse(): void {
-        if (this.win.collapsed) {
-            this.expand();
-        } else {
-            this.collapse();
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // State persistence
-    // -------------------------------------------------------------------------
-
-    private persistState(): void {
-        if (this.win.width <= 0 || this.win.height <= 0) {
-            return;
-        }
-        saveState({ ...this.win });
-    }
-
-    // -------------------------------------------------------------------------
-    // Keyboard shortcuts
-    // -------------------------------------------------------------------------
-
-    private installKeyboardListener(): void {
-        if (this.boundOnKeyDown) return;
-        this.boundOnKeyDown = this.onKeyDown;
-        document.addEventListener("keydown", this.boundOnKeyDown);
-    }
-
-    private removeKeyboardListener(): void {
-        if (this.boundOnKeyDown) {
-            document.removeEventListener("keydown", this.boundOnKeyDown);
-            this.boundOnKeyDown = null;
-        }
-    }
-
-    private onKeyDown = (e: KeyboardEvent): void => {
-        if (this.destroyed || this.win.hidden) return;
-        if (e.key === "Escape") {
-            this.hide();
-            this.onClose?.();
-        }
-    };
 
     // -------------------------------------------------------------------------
     // State rendering
@@ -355,7 +119,7 @@ export class FinanceWidget {
     // -------------------------------------------------------------------------
 
     private createRoot(): void {
-        const saved = loadState() ?? DEFAULT_STATE;
+        const saved = this.win;
 
         const root = document.createElement("div");
         root.className = this.classPrefix;
@@ -373,8 +137,8 @@ export class FinanceWidget {
 
         if (saved.collapsed) {
             root.classList.add(`${this.classPrefix}-collapsed`);
-            root.style.width = COLLAPSED_WIDTH + "px";
-            root.style.height = COLLAPSED_HEIGHT + "px";
+            root.style.width = "330px";
+            root.style.height = "44px";
             root.style.overflow = "hidden";
         } else {
             root.style.width = saved.width + "px";
@@ -432,7 +196,7 @@ export class FinanceWidget {
         const collapseBtn = document.createElement("button");
         collapseBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-collapse-btn`;
         collapseBtn.title = "Collapse";
-        collapseBtn.textContent = this.win.collapsed ? "\u25B6" : "\u25BC";
+        collapseBtn.textContent = saved.collapsed ? "\u25B6" : "\u25BC";
 
         // Close button
         const closeBtn = document.createElement("button");
@@ -473,217 +237,15 @@ export class FinanceWidget {
         this.collapseBtn = collapseBtn;
         this.closeBtn = closeBtn;
 
-        // Attach event listeners
-        dragHandle.addEventListener("pointerdown", this.onDragPointerDown);
-        dragHandle.addEventListener("dblclick", this.onHeaderDoubleClick);
-        resizeHandle.addEventListener("pointerdown", this.onResizePointerDown);
+        // Attach Finance-specific event listeners
         shiftBtn.addEventListener("click", this.onShiftToggle);
         refreshBtn.addEventListener("click", this.onRefreshClick);
-        collapseBtn.addEventListener("click", this.onCollapseClick);
-        closeBtn.addEventListener("click", this.onCloseClick);
 
         this.container.appendChild(root);
 
-        // Install keyboard listener
-        if (!saved.hidden) {
-            this.installKeyboardListener();
-        }
+        // Initialize window behavior (drag, resize, keyboard, collapse/close buttons)
+        this.initWindow(dragHandle, resizeHandle);
     }
-
-    // -------------------------------------------------------------------------
-    // Drag handling — bulletproof state management
-    // -------------------------------------------------------------------------
-
-    private cancelDrag(): void {
-        if (!this.isDragging) return;
-        this.isDragging = false;
-        if (this.root) {
-            const header = this.root.querySelector(`.${this.classPrefix}-header`) as HTMLElement | null;
-            if (header) {
-                header.style.cursor = "grab";
-            }
-        }
-        this.removeDragListeners();
-    }
-
-    private onDragPointerDown = (e: PointerEvent): void => {
-        if (this.destroyed || !this.root) return;
-
-        const target = e.target as HTMLElement;
-        if (target.closest("button") || target.closest("select") || target.closest("input")) {
-            return;
-        }
-
-        e.preventDefault();
-        this.isDragging = true;
-        this.dragStartX = e.clientX;
-        this.dragStartY = e.clientY;
-
-        const rect = this.root.getBoundingClientRect();
-        this.dragOrigX = rect.left;
-        this.dragOrigY = rect.top;
-
-        const header = this.root.querySelector(`.${this.classPrefix}-header`) as HTMLElement | null;
-        if (header) {
-            header.style.cursor = "grabbing";
-        }
-
-        this.boundOnDragPointerMove = this.onDragPointerMove;
-        this.boundOnDragPointerUp = this.onDragPointerUp;
-
-        document.addEventListener("pointermove", this.boundOnDragPointerMove);
-        document.addEventListener("pointerup", this.boundOnDragPointerUp);
-        document.addEventListener("pointercancel", this.boundOnDragPointerUp);
-        window.addEventListener("blur", this.boundOnDragPointerUp);
-    };
-
-    private onDragPointerMove = (e: PointerEvent): void => {
-        if (!this.isDragging || !this.root) return;
-        e.preventDefault();
-
-        const newX = this.dragOrigX + (e.clientX - this.dragStartX);
-        const newY = this.dragOrigY + (e.clientY - this.dragStartY);
-
-        this.root.style.left = newX + "px";
-        this.root.style.top = newY + "px";
-        this.root.style.bottom = "auto";
-        this.root.style.right = "auto";
-    };
-
-    private onDragPointerUp = (): void => {
-        this.isDragging = false;
-
-        if (this.root) {
-            const header = this.root.querySelector(`.${this.classPrefix}-header`) as HTMLElement | null;
-            if (header) {
-                header.style.cursor = "grab";
-            }
-        }
-
-        // Persist new position
-        if (this.root) {
-            const rect = this.root.getBoundingClientRect();
-            this.win = { ...this.win, x: Math.round(rect.left), y: Math.round(rect.top) };
-        }
-        this.persistState();
-        this.removeDragListeners();
-    };
-
-    private removeDragListeners(): void {
-        if (this.boundOnDragPointerMove) {
-            document.removeEventListener("pointermove", this.boundOnDragPointerMove);
-        }
-        if (this.boundOnDragPointerUp) {
-            document.removeEventListener("pointerup", this.boundOnDragPointerUp);
-            document.removeEventListener("pointercancel", this.boundOnDragPointerUp);
-            window.removeEventListener("blur", this.boundOnDragPointerUp);
-        }
-        this.boundOnDragPointerMove = null;
-        this.boundOnDragPointerUp = null;
-    }
-
-    // -------------------------------------------------------------------------
-    // Resize handling — bulletproof state management
-    // -------------------------------------------------------------------------
-
-    private cancelResize(): void {
-        if (!this.isResizing) return;
-        this.isResizing = false;
-        this.removeResizeListeners();
-    }
-
-    private onResizePointerDown = (e: PointerEvent): void => {
-        if (this.destroyed || !this.root || this.win.collapsed) return;
-        e.preventDefault();
-        e.stopPropagation();
-
-        this.isResizing = true;
-        this.resizeStartX = e.clientX;
-        this.resizeStartY = e.clientY;
-
-        const rect = this.root.getBoundingClientRect();
-        this.resizeOrigW = rect.width;
-        this.resizeOrigH = rect.height;
-
-        this.boundOnResizePointerMove = this.onResizePointerMove;
-        this.boundOnResizePointerUp = this.onResizePointerUp;
-
-        document.addEventListener("pointermove", this.boundOnResizePointerMove);
-        document.addEventListener("pointerup", this.boundOnResizePointerUp);
-        document.addEventListener("pointercancel", this.boundOnResizePointerUp);
-        window.addEventListener("blur", this.boundOnResizePointerUp);
-    };
-
-    private onResizePointerMove = (e: PointerEvent): void => {
-        if (!this.isResizing || !this.root) return;
-        e.preventDefault();
-
-        const dx = e.clientX - this.resizeStartX;
-        const dy = e.clientY - this.resizeStartY;
-
-        const newW = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, this.resizeOrigW + dx));
-        const newH = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, this.resizeOrigH + dy));
-
-        this.root.style.width = newW + "px";
-        this.root.style.height = newH + "px";
-    };
-
-    private onResizePointerUp = (): void => {
-        this.isResizing = false;
-
-        // Persist new dimensions to state
-        if (this.root) {
-            const rect = this.root.getBoundingClientRect();
-            this.win = {
-                ...this.win,
-                width: Math.round(rect.width),
-                height: Math.round(rect.height),
-            };
-        }
-        this.persistState();
-        this.removeResizeListeners();
-    };
-
-    private removeResizeListeners(): void {
-        if (this.boundOnResizePointerMove) {
-            document.removeEventListener("pointermove", this.boundOnResizePointerMove);
-        }
-        if (this.boundOnResizePointerUp) {
-            document.removeEventListener("pointerup", this.boundOnResizePointerUp);
-            document.removeEventListener("pointercancel", this.boundOnResizePointerUp);
-            window.removeEventListener("blur", this.boundOnResizePointerUp);
-        }
-        this.boundOnResizePointerMove = null;
-        this.boundOnResizePointerUp = null;
-    }
-
-    // -------------------------------------------------------------------------
-    // Window controls
-    // -------------------------------------------------------------------------
-
-    private updateCollapseButton(): void {
-        if (!this.collapseBtn) return;
-        this.collapseBtn.textContent = this.win.collapsed ? "\u25B6" : "\u25BC";
-        this.collapseBtn.title = this.win.collapsed ? "Expand" : "Collapse";
-    }
-
-    private onCollapseClick = (): void => {
-        if (this.destroyed) return;
-        this.toggleCollapse();
-    };
-
-    private onCloseClick = (): void => {
-        if (this.destroyed) return;
-        this.hide();
-        this.onClose?.();
-    };
-
-    private onHeaderDoubleClick = (e: MouseEvent): void => {
-        if (this.destroyed) return;
-        const target = e.target as HTMLElement;
-        if (target.closest("button")) return;
-        this.toggleCollapse();
-    };
 
     // -------------------------------------------------------------------------
     // State-based rendering
