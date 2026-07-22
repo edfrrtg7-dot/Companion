@@ -11,7 +11,7 @@
  * No standalone module launchers should exist.
  */
 
-import { CompanionModule } from "./companion-module";
+import { ModuleManager } from "./module-manager";
 import { diag } from "./dev";
 
 // ---------------------------------------------------------------------------
@@ -131,15 +131,16 @@ export class CompanionApp {
     /** Singleton guard — prevents multiple instances. */
     private static instance: CompanionApp | null = null;
 
-    private readonly modules: Map<string, CompanionModule> = new Map();
+    private readonly moduleManager: ModuleManager;
     private launcher: HTMLButtonElement | null = null;
     private moduleMenu: HTMLDivElement | null = null;
 
-    constructor() {
+    constructor(moduleManager: ModuleManager) {
         if (CompanionApp.instance) {
             throw new Error("CompanionApp is a singleton. Use CompanionApp.getInstance() or check existing instance.");
         }
         CompanionApp.instance = this;
+        this.moduleManager = moduleManager;
     }
     private injectStyles(): void {
         const existing = document.getElementById("ab-companion-styles");
@@ -148,15 +149,6 @@ export class CompanionApp {
         style.id = "ab-companion-styles";
         style.textContent = LAUNCHER_BUTTON_CSS;
         document.head.appendChild(style);
-    }
-
-    /**
-     * Register a module with Companion.
-     * The module becomes available in the launcher menu.
-     */
-    registerModule(module: CompanionModule): void {
-        if (this.modules.has(module.name)) return;
-        this.modules.set(module.name, module);
     }
 
     private started = false;
@@ -168,16 +160,6 @@ export class CompanionApp {
         this.injectStyles();
         this.createUI();
         diag("initialized");
-    }
-
-    /** Get all registered modules. */
-    getModules(): CompanionModule[] {
-        return Array.from(this.modules.values());
-    }
-
-    /** Get a registered module by name. */
-    getModule(name: string): CompanionModule | undefined {
-        return this.modules.get(name);
     }
 
     // -------------------------------------------------------------------------
@@ -207,7 +189,7 @@ export class CompanionApp {
         if (!this.moduleMenu) return;
         this.moduleMenu.innerHTML = "";
 
-        for (const mod of this.modules.values()) {
+        for (const mod of this.moduleManager.getAll()) {
             const item = document.createElement("button");
             item.className = "ab-companion-module-item";
             item.dataset.module = mod.name;
@@ -233,7 +215,7 @@ export class CompanionApp {
         items.forEach((el) => {
             const modName = (el as HTMLElement).dataset.module;
             if (!modName) return;
-            const mod = this.modules.get(modName);
+            const mod = this.moduleManager.get(modName);
             if (mod && mod.isOpen) {
                 el.classList.add("open");
             } else {
@@ -266,15 +248,7 @@ export class CompanionApp {
     }
 
     private onModuleItemClick(name: string): void {
-        const mod = this.modules.get(name);
-        if (!mod) return;
-
-        if (mod.isOpen) {
-            mod.close();
-        } else {
-            mod.open();
-        }
-
+        this.moduleManager.toggle(name);
         this.updateMenuItems();
         this.closeMenu();
     }

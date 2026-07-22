@@ -10,6 +10,7 @@
 
 import { CompanionApp } from "./companion-app";
 import { CompanionModule } from "./companion-module";
+import { ModuleManager } from "./module-manager";
 import { FinanceController } from "./finance-controller";
 import { FinanceWidget } from "./finance-widget";
 import { FINANCE_WIDGET_CSS } from "./finance-widget.css";
@@ -73,8 +74,9 @@ function createFinanceModule(): CompanionModule {
 }
 
 function createApp(): void {
-    app = new CompanionApp();
-    app.registerModule(createFinanceModule());
+    const manager = new ModuleManager();
+    manager.register(createFinanceModule());
+    app = new CompanionApp(manager);
     app.start();
 }
 

@@ -9,6 +9,9 @@
 export { CompanionApp } from "./companion-app";
 export type { CompanionModule } from "./companion-module";
 
+// ModuleManager — module registration and lifecycle
+export { ModuleManager } from "./module-manager";
+
 // FinanceApiClient — HTTP communication layer
 export { FinanceApiClient } from "./finance-api-client";
 export type { FinanceApiResponse, FinanceApiClientConfig } from "./finance-api-client";

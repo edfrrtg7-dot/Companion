@@ -135,8 +135,8 @@
 }
 `;
   var _CompanionApp = class _CompanionApp {
-    constructor() {
-      __publicField(this, "modules", /* @__PURE__ */ new Map());
+    constructor(moduleManager) {
+      __publicField(this, "moduleManager");
       __publicField(this, "launcher", null);
       __publicField(this, "moduleMenu", null);
       __publicField(this, "started", false);
@@ -144,6 +144,7 @@
         throw new Error("CompanionApp is a singleton. Use CompanionApp.getInstance() or check existing instance.");
       }
       _CompanionApp.instance = this;
+      this.moduleManager = moduleManager;
     }
     injectStyles() {
       const existing = document.getElementById("ab-companion-styles");
@@ -153,14 +154,6 @@
       style.textContent = LAUNCHER_BUTTON_CSS;
       document.head.appendChild(style);
     }
-    /**
-     * Register a module with Companion.
-     * The module becomes available in the launcher menu.
-     */
-    registerModule(module) {
-      if (this.modules.has(module.name)) return;
-      this.modules.set(module.name, module);
-    }
     /** Start the Companion application and create the launcher UI. */
     start() {
       if (this.started) return;
@@ -168,14 +161,6 @@
       this.injectStyles();
       this.createUI();
       diag("initialized");
-    }
-    /** Get all registered modules. */
-    getModules() {
-      return Array.from(this.modules.values());
-    }
-    /** Get a registered module by name. */
-    getModule(name) {
-      return this.modules.get(name);
     }
     // -------------------------------------------------------------------------
     // UI
@@ -197,7 +182,7 @@
     buildMenuItems() {
       if (!this.moduleMenu) return;
       this.moduleMenu.innerHTML = "";
-      for (const mod of this.modules.values()) {
+      for (const mod of this.moduleManager.getAll()) {
         const item = document.createElement("button");
         item.className = "ab-companion-module-item";
         item.dataset.module = mod.name;
@@ -218,7 +203,7 @@
       items.forEach((el) => {
         const modName = el.dataset.module;
         if (!modName) return;
-        const mod = this.modules.get(modName);
+        const mod = this.moduleManager.get(modName);
         if (mod && mod.isOpen) {
           el.classList.add("open");
         } else {
@@ -246,13 +231,7 @@
       this.launcher.classList.remove("active");
     }
     onModuleItemClick(name) {
-      const mod = this.modules.get(name);
-      if (!mod) return;
-      if (mod.isOpen) {
-        mod.close();
-      } else {
-        mod.open();
-      }
+      this.moduleManager.toggle(name);
       this.updateMenuItems();
       this.closeMenu();
     }
@@ -260,6 +239,54 @@
   /** Singleton guard — prevents multiple instances. */
   __publicField(_CompanionApp, "instance", null);
   var CompanionApp = _CompanionApp;
+
+  // ../src/companion/module-manager.ts
+  var ModuleManager = class {
+    constructor() {
+      __publicField(this, "modules", /* @__PURE__ */ new Map());
+    }
+    /** Register a module. Ignores duplicates. */
+    register(module) {
+      if (this.modules.has(module.name)) return;
+      this.modules.set(module.name, module);
+    }
+    /** Get a module by name. */
+    get(name) {
+      return this.modules.get(name);
+    }
+    /** Get all registered modules. */
+    getAll() {
+      return Array.from(this.modules.values());
+    }
+    /** Open a module by name. No-op if not found or already open. */
+    open(name) {
+      const mod = this.modules.get(name);
+      if (mod && !mod.isOpen) {
+        mod.open();
+      }
+    }
+    /** Close a module by name. No-op if not found or already closed. */
+    close(name) {
+      const mod = this.modules.get(name);
+      if (mod && mod.isOpen) {
+        mod.close();
+      }
+    }
+    /** Toggle a module open/closed. No-op if not found. */
+    toggle(name) {
+      const mod = this.modules.get(name);
+      if (!mod) return;
+      if (mod.isOpen) {
+        mod.close();
+      } else {
+        mod.open();
+      }
+    }
+    /** Check if a module is open. Returns false if not found. */
+    isOpen(name) {
+      return this.modules.get(name)?.isOpen ?? false;
+    }
+  };
 
   // ../src/companion/finance-api-client.ts
   var FinanceApiError = class extends Error {
@@ -2185,8 +2212,9 @@
     };
   }
   function createApp() {
-    app = new CompanionApp();
-    app.registerModule(createFinanceModule());
+    const manager = new ModuleManager();
+    manager.register(createFinanceModule());
+    app = new CompanionApp(manager);
     app.start();
   }
   function bootstrap() {
