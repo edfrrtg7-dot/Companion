@@ -120,7 +120,8 @@ export abstract class CompanionWindow {
     private dragOrigX = 0;
     private dragOrigY = 0;
     private boundOnDragPointerMove: ((e: PointerEvent) => void) | null = null;
-    private boundOnDragPointerUp: (() => void) | null = null;
+    private boundOnDragPointerUp: ((e: PointerEvent) => void) | null = null;
+    private boundOnDragBlur: (() => void) | null = null;
 
     // Resize state
     private isResizing = false;
@@ -129,7 +130,8 @@ export abstract class CompanionWindow {
     private resizeOrigW = 0;
     private resizeOrigH = 0;
     private boundOnResizePointerMove: ((e: PointerEvent) => void) | null = null;
-    private boundOnResizePointerUp: (() => void) | null = null;
+    private boundOnResizePointerUp: ((e: PointerEvent) => void) | null = null;
+    private boundOnResizeBlur: (() => void) | null = null;
 
     constructor(config: CompanionWindowConfig) {
         this.container = config.container ?? document.body;
@@ -388,15 +390,17 @@ export abstract class CompanionWindow {
         const header = this.root.querySelector(`.${this.classPrefix}-header`) as HTMLElement | null;
         if (header) {
             header.style.cursor = "grabbing";
+            header.setPointerCapture(e.pointerId);
         }
 
         this.boundOnDragPointerMove = this.onDragPointerMove;
         this.boundOnDragPointerUp = this.onDragPointerUp;
+        this.boundOnDragBlur = this.onDragBlur;
 
         document.addEventListener("pointermove", this.boundOnDragPointerMove);
         document.addEventListener("pointerup", this.boundOnDragPointerUp);
         document.addEventListener("pointercancel", this.boundOnDragPointerUp);
-        window.addEventListener("blur", this.boundOnDragPointerUp);
+        window.addEventListener("blur", this.boundOnDragBlur);
     };
 
     private onDragPointerMove = (e: PointerEvent): void => {
@@ -412,13 +416,16 @@ export abstract class CompanionWindow {
         this.root.style.right = "auto";
     };
 
-    private onDragPointerUp = (): void => {
+    private onDragPointerUp = (e: PointerEvent): void => {
         this.isDragging = false;
 
         if (this.root) {
             const header = this.root.querySelector(`.${this.classPrefix}-header`) as HTMLElement | null;
             if (header) {
                 header.style.cursor = "grab";
+                if (header.hasPointerCapture(e.pointerId)) {
+                    header.releasePointerCapture(e.pointerId);
+                }
             }
         }
 
@@ -431,6 +438,10 @@ export abstract class CompanionWindow {
         this.removeDragListeners();
     };
 
+    private onDragBlur = (): void => {
+        this.cancelDrag();
+    };
+
     private removeDragListeners(): void {
         if (this.boundOnDragPointerMove) {
             document.removeEventListener("pointermove", this.boundOnDragPointerMove);
@@ -438,10 +449,13 @@ export abstract class CompanionWindow {
         if (this.boundOnDragPointerUp) {
             document.removeEventListener("pointerup", this.boundOnDragPointerUp);
             document.removeEventListener("pointercancel", this.boundOnDragPointerUp);
-            window.removeEventListener("blur", this.boundOnDragPointerUp);
+        }
+        if (this.boundOnDragBlur) {
+            window.removeEventListener("blur", this.boundOnDragBlur);
         }
         this.boundOnDragPointerMove = null;
         this.boundOnDragPointerUp = null;
+        this.boundOnDragBlur = null;
     }
 
     // -------------------------------------------------------------------------
@@ -467,13 +481,19 @@ export abstract class CompanionWindow {
         this.resizeOrigW = rect.width;
         this.resizeOrigH = rect.height;
 
+        const handle = e.currentTarget as HTMLElement;
+        if (handle) {
+            handle.setPointerCapture(e.pointerId);
+        }
+
         this.boundOnResizePointerMove = this.onResizePointerMove;
         this.boundOnResizePointerUp = this.onResizePointerUp;
+        this.boundOnResizeBlur = this.onResizeBlur;
 
         document.addEventListener("pointermove", this.boundOnResizePointerMove);
         document.addEventListener("pointerup", this.boundOnResizePointerUp);
         document.addEventListener("pointercancel", this.boundOnResizePointerUp);
-        window.addEventListener("blur", this.boundOnResizePointerUp);
+        window.addEventListener("blur", this.boundOnResizeBlur);
     };
 
     private onResizePointerMove = (e: PointerEvent): void => {
@@ -490,8 +510,16 @@ export abstract class CompanionWindow {
         this.root.style.height = newH + "px";
     };
 
-    private onResizePointerUp = (): void => {
+    private onResizePointerUp = (e: PointerEvent): void => {
         this.isResizing = false;
+
+        // Release pointer capture
+        if (this.root) {
+            const resizeHandle = this.root.querySelector(`.${this.classPrefix}-resize`) as HTMLElement | null;
+            if (resizeHandle && resizeHandle.hasPointerCapture(e.pointerId)) {
+                resizeHandle.releasePointerCapture(e.pointerId);
+            }
+        }
 
         // Persist new dimensions to state
         if (this.root) {
@@ -506,6 +534,10 @@ export abstract class CompanionWindow {
         this.removeResizeListeners();
     };
 
+    private onResizeBlur = (): void => {
+        this.cancelResize();
+    };
+
     private removeResizeListeners(): void {
         if (this.boundOnResizePointerMove) {
             document.removeEventListener("pointermove", this.boundOnResizePointerMove);
@@ -513,9 +545,12 @@ export abstract class CompanionWindow {
         if (this.boundOnResizePointerUp) {
             document.removeEventListener("pointerup", this.boundOnResizePointerUp);
             document.removeEventListener("pointercancel", this.boundOnResizePointerUp);
-            window.removeEventListener("blur", this.boundOnResizePointerUp);
+        }
+        if (this.boundOnResizeBlur) {
+            window.removeEventListener("blur", this.boundOnResizeBlur);
         }
         this.boundOnResizePointerMove = null;
         this.boundOnResizePointerUp = null;
+        this.boundOnResizeBlur = null;
     }
 }

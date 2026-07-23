@@ -24,6 +24,9 @@ export const STORAGE_KEYS = {
     /** Finance module state (future). */
     FINANCE_STATE: "ab-finance-state",
 
+    /** Active tab in the Companion modal. */
+    COMPANION_ACTIVE_TAB: "ab-companion-active-tab",
+
     /** Storage version marker. */
     STORAGE_VERSION: "ab-storage-version",
 } as const;

@@ -15,18 +15,229 @@
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
+  // ../src/companion/storage-adapter.ts
+  var LocalStorageAdapter = class {
+    get(key) {
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    }
+    set(key, value) {
+      try {
+        localStorage.setItem(key, value);
+      } catch {
+      }
+    }
+    remove(key) {
+      try {
+        localStorage.removeItem(key);
+      } catch {
+      }
+    }
+    clear() {
+      try {
+        localStorage.clear();
+      } catch {
+      }
+    }
+    exists(key) {
+      try {
+        return localStorage.getItem(key) !== null;
+      } catch {
+        return false;
+      }
+    }
+  };
+  var ChromeStorageAdapter = class {
+    constructor() {
+      __publicField(this, "cache", /* @__PURE__ */ new Map());
+      __publicField(this, "ready", false);
+      this.hydrate();
+    }
+    /**
+     * Hydrate cache from chrome.storage.local.
+     * This is async but we don't await it — the cache starts empty
+     * and gets populated in the background. Subsequent get() calls
+     * will return from cache once hydrated.
+     */
+    hydrate() {
+      try {
+        if (typeof chrome !== "undefined" && chrome.storage?.local) {
+          chrome.storage.local.get(null).then((all) => {
+            for (const [key, value] of Object.entries(all)) {
+              if (typeof value === "string") {
+                this.cache.set(key, value);
+              }
+            }
+            this.ready = true;
+          }).catch(() => {
+            this.ready = true;
+          });
+        } else {
+          this.ready = true;
+        }
+      } catch {
+        this.ready = true;
+      }
+    }
+    get(key) {
+      return this.cache.get(key) ?? null;
+    }
+    set(key, value) {
+      this.cache.set(key, value);
+      this.persist(key, value);
+    }
+    remove(key) {
+      this.cache.delete(key);
+      this.persistRemove(key);
+    }
+    clear() {
+      this.cache.clear();
+      this.persistClear();
+    }
+    exists(key) {
+      return this.cache.has(key);
+    }
+    /** Whether the cache has been hydrated from chrome.storage. */
+    get isReady() {
+      return this.ready;
+    }
+    persist(key, value) {
+      try {
+        if (typeof chrome !== "undefined" && chrome.storage?.local) {
+          chrome.storage.local.set({ [key]: value });
+        }
+      } catch {
+      }
+    }
+    persistRemove(key) {
+      try {
+        if (typeof chrome !== "undefined" && chrome.storage?.local) {
+          chrome.storage.local.remove(key);
+        }
+      } catch {
+      }
+    }
+    persistClear() {
+      try {
+        if (typeof chrome !== "undefined" && chrome.storage?.local) {
+          chrome.storage.local.clear();
+        }
+      } catch {
+      }
+    }
+  };
+
+  // ../src/companion/storage-service.ts
+  var adapter = null;
+  function getAdapter() {
+    if (adapter) return adapter;
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      adapter = new ChromeStorageAdapter();
+    } else {
+      adapter = new LocalStorageAdapter();
+    }
+    return adapter;
+  }
+  var StorageService = {
+    /**
+     * Read a value by key.
+     * @param key - Storage key from STORAGE_KEYS
+     * @returns The stored value, or null if not found
+     */
+    get(key) {
+      return getAdapter().get(key);
+    },
+    /**
+     * Write a value by key.
+     * @param key - Storage key from STORAGE_KEYS
+     * @param value - Value to store
+     */
+    set(key, value) {
+      getAdapter().set(key, value);
+    },
+    /**
+     * Remove a value by key.
+     * @param key - Storage key from STORAGE_KEYS
+     */
+    remove(key) {
+      getAdapter().remove(key);
+    },
+    /** Remove all stored values. Use with caution. */
+    clear() {
+      getAdapter().clear();
+    },
+    /**
+     * Check if a key exists.
+     * @param key - Storage key from STORAGE_KEYS
+     * @returns true if the key exists
+     */
+    exists(key) {
+      return getAdapter().exists(key);
+    },
+    /**
+     * Get the active adapter type.
+     * Useful for diagnostics.
+     */
+    getAdapterType() {
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        return "chrome.storage.local";
+      }
+      return "localStorage";
+    }
+  };
+
+  // ../src/companion/storage-keys.ts
+  var STORAGE_KEYS = {
+    /** Finance widget window state (position, size, collapsed, hidden). */
+    COMPANION_WINDOW_STATE: "ab-companion-window-state",
+    /** Finance widget window state (legacy key for migration). */
+    FINANCE_WIDGET_STATE: "ab-finance-widget-state",
+    /** Development mode flag. */
+    DEV_MODE: "ab-dev",
+    /** Settings module preferences (future). */
+    SETTINGS: "ab-settings",
+    /** Finance module state (future). */
+    FINANCE_STATE: "ab-finance-state",
+    /** Storage version marker. */
+    STORAGE_VERSION: "ab-storage-version"
+  };
+
   // ../src/companion/dev.ts
   var IS_DEV = (() => {
     try {
-      return localStorage.getItem("ab-dev") !== null;
+      return StorageService.get(STORAGE_KEYS.DEV_MODE) !== null;
     } catch {
-      return false;
+      try {
+        return localStorage.getItem(STORAGE_KEYS.DEV_MODE) !== null;
+      } catch {
+        return false;
+      }
     }
   })();
+  function format(level, _args) {
+    const timestamp = (/* @__PURE__ */ new Date()).toISOString().slice(11, 23);
+    return `[Companion:${level}] ${timestamp}`;
+  }
   function diag(...args) {
     if (IS_DEV) {
-      console.log("[Companion]", ...args);
+      console.log(format("INFO" /* INFO */, args), ...args);
     }
+  }
+  function diagWarn(...args) {
+    if (IS_DEV) {
+      console.warn(format("WARN" /* WARN */, args), ...args);
+    }
+  }
+  function diagError(...args) {
+    if (IS_DEV) {
+      console.error(format("ERROR" /* ERROR */, args), ...args);
+    }
+  }
+  function isDevMode() {
+    return IS_DEV;
   }
 
   // ../src/companion/companion-app.ts
@@ -662,10 +873,10 @@
     ]
   ]);
   var ALL_SHIFTS = ["morning", "day", "night"];
-  var STORAGE_KEY = "agencybooster-finance-shift";
+  var STORAGE_KEY = STORAGE_KEYS.FINANCE_STATE;
   function loadShift() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = StorageService.get(STORAGE_KEY);
       if (raw && isShiftType(raw)) {
         return raw;
       }
@@ -675,7 +886,7 @@
   }
   function saveShift(shift) {
     try {
-      localStorage.setItem(STORAGE_KEY, shift);
+      StorageService.set(STORAGE_KEY, shift);
     } catch {
     }
   }
@@ -1062,7 +1273,7 @@
   var COLLAPSED_HEIGHT = 44;
   function loadState(storageKey) {
     try {
-      const raw = localStorage.getItem(storageKey);
+      const raw = StorageService.get(storageKey);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (typeof parsed === "object" && parsed !== null && typeof parsed.x === "number" && typeof parsed.y === "number" && typeof parsed.width === "number" && parsed.width > 0 && typeof parsed.height === "number" && parsed.height > 0 && typeof parsed.collapsed === "boolean" && typeof parsed.hidden === "boolean") {
@@ -1074,7 +1285,7 @@
   }
   function saveState(storageKey, state) {
     try {
-      localStorage.setItem(storageKey, JSON.stringify(state));
+      StorageService.set(storageKey, JSON.stringify(state));
     } catch {
     }
   }
@@ -1433,7 +1644,7 @@
 
   // ../src/companion/finance-widget.ts
   var DEFAULT_CLASS_PREFIX2 = "ab-finance";
-  var STORAGE_KEY2 = "ab-finance-widget-state";
+  var STORAGE_KEY2 = STORAGE_KEYS.FINANCE_WIDGET_STATE;
   var DEFAULT_STATE = {
     x: 24,
     y: 24,
@@ -1457,6 +1668,7 @@
       __publicField(this, "refreshBtn", null);
       __publicField(this, "shiftBtn", null);
       __publicField(this, "shiftDropdown", null);
+      __publicField(this, "shiftOptions", []);
       // -------------------------------------------------------------------------
       // State rendering
       // -------------------------------------------------------------------------
@@ -1501,6 +1713,10 @@
       if (this.destroyed) return;
       this.unsubscribe();
       this.controller.cancelPending();
+      for (const option of this.shiftOptions) {
+        option.removeEventListener("click", this.onShiftSelect);
+      }
+      this.shiftOptions = [];
       this.refreshBtn = null;
       this.shiftBtn = null;
       this.shiftDropdown = null;
@@ -1565,6 +1781,7 @@
         option.dataset.shift = def.type;
         option.innerHTML = `<span class="${this.classPrefix}-shift-name">${def.label}</span><span class="${this.classPrefix}-shift-time">${def.timeDisplay}</span>`;
         option.addEventListener("click", this.onShiftSelect);
+        this.shiftOptions.push(option);
         shiftDropdown.appendChild(option);
       }
       const refreshBtn = document.createElement("button");
@@ -2200,6 +2417,118 @@
 }
 `;
 
+  // ../src/companion/storage-version.ts
+  var STORAGE_VERSION = 1;
+  var VERSION_KEY = STORAGE_KEYS.STORAGE_VERSION;
+  function getStoredVersion() {
+    const raw = StorageService.get(VERSION_KEY);
+    if (!raw) return 0;
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === "object" && parsed !== null && typeof parsed.version === "number") {
+        return parsed.version;
+      }
+    } catch {
+    }
+    return 0;
+  }
+  function setStoredVersion(version) {
+    const data = { version };
+    StorageService.set(VERSION_KEY, JSON.stringify(data));
+  }
+
+  // ../src/companion/storage-migration.ts
+  var MIGRATIONS = [];
+  function runMigrations() {
+    const storedVersion = getStoredVersion();
+    if (storedVersion >= STORAGE_VERSION) {
+      return;
+    }
+    if (storedVersion === 0) {
+      setStoredVersion(STORAGE_VERSION);
+      diag("Storage initialized at version", STORAGE_VERSION);
+      return;
+    }
+    diag("Storage migration needed:", storedVersion, "\u2192", STORAGE_VERSION);
+    let currentVersion = storedVersion;
+    for (const migration of MIGRATIONS) {
+      if (migration.from === currentVersion) {
+        try {
+          diag("Running migration:", migration.from, "\u2192", migration.to);
+          migration.migrate();
+          currentVersion = migration.to;
+        } catch (error) {
+          diag("Migration failed:", migration.from, "\u2192", migration.to, error);
+          return;
+        }
+      }
+    }
+    setStoredVersion(STORAGE_VERSION);
+    diag("Storage migration complete at version", STORAGE_VERSION);
+  }
+
+  // ../src/companion/companion-diagnostics.ts
+  var moduleNames = [];
+  function setRegisteredModules(names) {
+    moduleNames = names;
+  }
+  function detectEnvironment() {
+    if (typeof chrome !== "undefined" && chrome.runtime?.id) {
+      return "extension";
+    }
+    if (typeof GM_info !== "undefined" || typeof Tampermonkey !== "undefined") {
+      return "userscript";
+    }
+    return "unknown";
+  }
+  function getVersion() {
+    try {
+      if (typeof chrome !== "undefined" && chrome.runtime?.getManifest) {
+        return chrome.runtime.getManifest().version;
+      }
+    } catch {
+    }
+    return "1.0.0";
+  }
+  function collectDiagnostics() {
+    return {
+      version: getVersion(),
+      modules: [...moduleNames],
+      storage: StorageService.getAdapterType(),
+      storageVersion: getStoredVersion(),
+      environment: detectEnvironment(),
+      runtime: {
+        isTopFrame: window === window.top,
+        isExtension: typeof chrome !== "undefined" && !!chrome.runtime?.id,
+        devMode: isDevMode(),
+        readyState: document.readyState
+      }
+    };
+  }
+  function logDiagnostics() {
+    if (!isDevMode()) return;
+    const info = collectDiagnostics();
+    console.groupCollapsed("[Companion] Diagnostics");
+    console.log("Version:", info.version);
+    console.log("Environment:", info.environment);
+    console.log("Modules:", info.modules);
+    console.log("Storage:", info.storage);
+    console.log("Storage Version:", info.storageVersion);
+    console.log("Runtime:", info.runtime);
+    console.groupEnd();
+  }
+  function exposeDiagnostics() {
+    if (!isDevMode()) return;
+    try {
+      window.__COMPANION_DIAGNOSTICS__ = {
+        info: collectDiagnostics,
+        log: logDiagnostics
+      };
+      diag("Diagnostics exposed at window.__COMPANION_DIAGNOSTICS__");
+    } catch {
+    }
+  }
+
   // ../src/companion/bootstrap.ts
   var app = null;
   var widget = null;
@@ -2249,21 +2578,46 @@
     };
   }
   function createApp() {
+    diag("Creating ModuleManager");
     const manager = new ModuleManager();
+    diag("Registering Finance module");
     manager.register(createFinanceModule());
+    setRegisteredModules(manager.getAll().map((m) => m.name));
+    diag("Creating CompanionApp");
     app = new CompanionApp(manager);
+    diag("Starting CompanionApp");
     app.start();
+    exposeDiagnostics();
   }
   function bootstrap() {
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", bootstrap);
-      return;
+    try {
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", bootstrap);
+        return;
+      }
+      if (window.__AB_COMPANION_APP__) {
+        diagWarn("Bootstrap already completed, skipping");
+        return;
+      }
+      window.__AB_COMPANION_APP__ = true;
+      if (window !== window.top) {
+        diag("Skipping iframe context");
+        return;
+      }
+      diag("Bootstrap started");
+      runMigrations();
+      createApp();
+      diag("Bootstrap finished");
+    } catch (error) {
+      diagError("Bootstrap failed:", error);
+      try {
+        window.__AB_COMPANION_APP__ = true;
+      } catch {
+      }
     }
-    if (window.__AB_COMPANION_APP__) return;
-    window.__AB_COMPANION_APP__ = true;
-    if (window !== window.top) return;
-    createApp();
   }
-  bootstrap();
+  if (typeof chrome === "undefined" || !chrome.runtime?.id) {
+    bootstrap();
+  }
 })();
 })();

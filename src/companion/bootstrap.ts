@@ -2,26 +2,28 @@
  * Companion Bootstrap
  *
  * Single entry point for the Companion application.
- * Creates CompanionApp, registers Finance module, starts the app.
+ * Creates FinanceController, FinanceWidget, CompanionModal, CompanionApp.
+ *
+ * Two independent systems:
+ *   - Companion: launcher → modal (Dashboard | Manager | Diagnostics)
+ *   - Finance: standalone FinanceWidget, opened via Finance Module API
  *
  * Responsibilities:
  *   - Wait for DOM ready
  *   - Prevent duplicate initialization (idempotent)
  *   - Run storage migrations
- *   - Validate bootstrap state
  *   - Error boundaries (failures never break CRM)
  *   - Diagnostic logging (dev mode only)
- *
- * Finance is the first Companion module.
- * Additional modules will be registered here in the future.
  */
 
 import { CompanionApp } from "./companion-app";
 import { CompanionModule } from "./companion-module";
 import { ModuleManager } from "./module-manager";
+import { CompanionModal, setFinanceController } from "./companion-modal";
 import { FinanceController } from "./finance-controller";
 import { FinanceWidget } from "./finance-widget";
 import { FINANCE_WIDGET_CSS } from "./finance-widget.css";
+import { collectDiagnostics } from "./companion-diagnostics";
 import { diag, diagError, diagWarn } from "./dev";
 import { runMigrations } from "./storage-migration";
 import { setRegisteredModules, exposeDiagnostics } from "./companion-diagnostics";
@@ -31,38 +33,42 @@ import { setRegisteredModules, exposeDiagnostics } from "./companion-diagnostics
 // ---------------------------------------------------------------------------
 
 let app: CompanionApp | null = null;
+let modal: CompanionModal | null = null;
 let widget: FinanceWidget | null = null;
-let controller: FinanceController | null = null;
-let stylesInjected = false;
-let widgetInitialized = false;
+let financeController: FinanceController | null = null;
+let financeStylesInjected = false;
+let financeWidgetInitialized = false;
 
 // ---------------------------------------------------------------------------
-// Finance module
+// Style injection
 // ---------------------------------------------------------------------------
 
 function injectFinanceStyles(): void {
-    if (stylesInjected) return;
-    stylesInjected = true;
+    if (financeStylesInjected) return;
+    financeStylesInjected = true;
     const style = document.createElement("style");
     style.id = "ab-finance-styles";
     style.textContent = FINANCE_WIDGET_CSS;
     document.head.appendChild(style);
 }
 
-/**
- * Lazily initialize the Finance widget on first open.
- * Creates controller and widget, then hides the widget.
- * The widget remains hidden until the user opens it via the Companion launcher.
- */
-function ensureFinanceWidget(): void {
-    if (widgetInitialized) return;
-    widgetInitialized = true;
+// ---------------------------------------------------------------------------
+// Finance — standalone widget
+// ---------------------------------------------------------------------------
 
+function ensureFinanceController(): void {
+    if (financeController) return;
+    financeController = new FinanceController();
+    setFinanceController(financeController);
+}
+
+function ensureFinanceWidget(): void {
+    if (financeWidgetInitialized) return;
+    financeWidgetInitialized = true;
     injectFinanceStyles();
-    controller = new FinanceController();
-    widget = new FinanceWidget(controller);
+    ensureFinanceController();
+    widget = new FinanceWidget(financeController!);
     widget.hide();
-    diag("Finance created");
 }
 
 function createFinanceModule(): CompanionModule {
@@ -72,21 +78,21 @@ function createFinanceModule(): CompanionModule {
         open(): void {
             ensureFinanceWidget();
             widget?.show();
-            diag("Finance shown");
+            diag("Finance shown (standalone)");
         },
         close(): void {
             widget?.hide();
-            diag("Finance hidden");
+            diag("Finance closed");
         },
         get isOpen(): boolean {
             return widget?.isVisible ?? false;
         },
         destroy(): void {
             widget?.destroy();
-            controller?.cancelPending();
+            financeController?.cancelPending();
             widget = null;
-            controller = null;
-            widgetInitialized = false;
+            financeController = null;
+            financeWidgetInitialized = false;
         },
     };
 }
@@ -102,8 +108,15 @@ function createApp(): void {
     diag("Registering Finance module");
     manager.register(createFinanceModule());
 
-    // Expose registered modules for diagnostics
     setRegisteredModules(manager.getAll().map((m) => m.name));
+
+    diag("Creating CompanionModal");
+    modal = CompanionModal.getInstance();
+
+    // Finance Widget button in Manager tab opens FinanceWidget
+    modal.setFinanceClickHandler(() => {
+        manager.open("finance");
+    });
 
     diag("Creating CompanionApp");
     app = new CompanionApp(manager);
@@ -111,7 +124,6 @@ function createApp(): void {
     diag("Starting CompanionApp");
     app.start();
 
-    // Expose diagnostics in dev mode
     exposeDiagnostics();
 }
 
@@ -150,20 +162,16 @@ export function bootstrap(): void {
 
         diag("Bootstrap finished");
     } catch (error) {
-        // Error boundary: failures never break CRM
         diagError("Bootstrap failed:", error);
-
-        // Disable Companion to prevent repeated failures
         try {
             (window as any).__AB_COMPANION_APP__ = true;
-        } catch {
-            // Ignore — we're already in error handling
-        }
+        } catch { /* ignore */ }
     }
 }
 
 // Auto-bootstrap when loaded as userscript (Tampermonkey)
 // Content script imports and calls bootstrap() explicitly
-if (typeof chrome === "undefined" || !chrome.runtime?.id) {
+const _isExtension = typeof chrome !== "undefined" && !!chrome.runtime?.id;
+if (!_isExtension) {
     bootstrap();
 }

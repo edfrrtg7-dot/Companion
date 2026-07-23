@@ -9,7 +9,6 @@
  *   - Wait until DOM is ready
  *   - Prevent duplicate initialization (idempotent)
  *   - Bootstrap Companion through existing bootstrap.ts
- *   - Diagnostic logging (dev mode only)
  *   - Error boundary (failures never break CRM)
  *
  * No business logic. No module logic. No UI creation.
