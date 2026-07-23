@@ -22,6 +22,7 @@ import { FinanceController } from "./finance-controller";
 import { FinanceShift } from "./finance-shift";
 import { diag } from "./dev";
 import { COMPANION_MODAL_CSS } from "./companion-modal.css";
+import { COMPANION_LOGO_DATA_URI } from "./brand-logo";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -29,6 +30,8 @@ import { COMPANION_MODAL_CSS } from "./companion-modal.css";
 
 const VALID_TABS = ["dashboard", "manager", "diagnostics"] as const;
 type TabName = (typeof VALID_TABS)[number];
+
+const COMPANION_VERSION = "v2.0.0";
 
 // ---------------------------------------------------------------------------
 // State
@@ -324,7 +327,7 @@ function createDialogOverlay(): HTMLElement {
 
 function closeDialogOverlay(overlay: HTMLElement): void {
     overlay.classList.remove("visible");
-    setTimeout(() => overlay.remove(), 200);
+    setTimeout(() => overlay.remove(), 150);
 }
 
 function showAlert(msgHtml: string): Promise<void> {
@@ -719,7 +722,7 @@ function collectFinanceData(): Record<string, string> {
 
 function generateReport(groups: Record<string, Record<string, string>>): string {
     const lines: string[] = [];
-    lines.push("=== AgencyBooster Companion — Diagnostics Report ===");
+    lines.push("=== Companion — Diagnostics Report ===");
     lines.push(`Generated: ${new Date().toISOString()}`);
     lines.push("");
 
@@ -962,9 +965,15 @@ function show(onFinanceClick: () => void): void {
     overlay.innerHTML = `
         <div class="ab-modal large">
             <div class="ab-header">
-                <h2>AgencyBooster Companion</h2>
-                <div class="ab-close-icon" id="ab-main-close">
-                    <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                <div class="ab-header-brand">
+                    <img class="ab-header-logo" src="${COMPANION_LOGO_DATA_URI}" alt="" />
+                    <span class="ab-header-title">Companion</span>
+                </div>
+                <div class="ab-header-right">
+                    <span class="ab-header-version">${COMPANION_VERSION}</span>
+                    <div class="ab-close-icon" id="ab-main-close">
+                        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                    </div>
                 </div>
             </div>
             <div class="ab-tabs">
@@ -1049,6 +1058,9 @@ function show(onFinanceClick: () => void): void {
     dashboardInterval = setInterval(updateDashboard, 5000);
 
     diag("CompanionModal shown");
+
+    // Notify listeners of visibility change
+    CompanionModal.getInstance().onVisibilityChange?.();
 }
 
 function hide(): void {
@@ -1066,10 +1078,13 @@ function hide(): void {
     // Fade out
     modalOverlay.classList.remove("visible");
     const overlay = modalOverlay;
-    setTimeout(() => overlay?.remove(), 200);
+    setTimeout(() => overlay?.remove(), 150);
     modalOverlay = null;
 
     diag("CompanionModal hidden");
+
+    // Notify listeners of visibility change
+    CompanionModal.getInstance().onVisibilityChange?.();
 }
 
 // ---------------------------------------------------------------------------
@@ -1079,6 +1094,7 @@ function hide(): void {
 export class CompanionModal {
     private static instance: CompanionModal | null = null;
     private onFinanceClick: (() => void) | null = null;
+    private onVisibilityChange: (() => void) | null = null;
 
     static getInstance(): CompanionModal {
         if (!CompanionModal.instance) {
@@ -1090,6 +1106,11 @@ export class CompanionModal {
     /** Set the callback for the Finance Widget button in Manager. */
     setFinanceClickHandler(handler: () => void): void {
         this.onFinanceClick = handler;
+    }
+
+    /** Set the callback for visibility changes (show/hide). */
+    setOnVisibilityChange(callback: (() => void) | null): void {
+        this.onVisibilityChange = callback;
     }
 
     /** Show the Companion modal. */

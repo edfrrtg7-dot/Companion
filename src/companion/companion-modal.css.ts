@@ -15,8 +15,8 @@ export const COMPANION_MODAL_CSS = `
     --ab-bg-card: rgba(30, 41, 59, 0.6);
     --ab-text: #f8fafc;
     --ab-text-dim: #94a3b8;
-    --ab-accent: #3b82f6;
-    --ab-accent-hover: #2563eb;
+    --ab-accent: #2F6BFF;
+    --ab-accent-hover: #4A82FF;
     --ab-border: rgba(255, 255, 255, 0.1);
     --ab-danger: #ef4444;
     --ab-success: #10b981;
@@ -37,7 +37,7 @@ export const COMPANION_MODAL_CSS = `
     font-family: var(--ab-font);
     color: var(--ab-text);
     opacity: 0;
-    transition: opacity 0.2s ease;
+    transition: opacity 0.15s ease;
 }
 .ab-overlay.visible { opacity: 1; }
 
@@ -53,7 +53,7 @@ export const COMPANION_MODAL_CSS = `
     flex-direction: column;
     overflow: hidden;
     transform: scale(0.95);
-    transition: transform 0.2s ease;
+    transition: transform 0.15s ease;
 }
 .ab-modal.large { width: 600px; }
 .ab-modal.small { width: 320px; }
@@ -67,22 +67,51 @@ export const COMPANION_MODAL_CSS = `
     padding: 16px 20px;
     border-bottom: 1px solid var(--ab-border);
 }
-.ab-header h2 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
+.ab-header-brand {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+}
+.ab-header-logo {
+    width: 22px;
+    height: 22px;
+}
+.ab-header-title {
+    font-size: 15px;
+    font-weight: 600;
     letter-spacing: -0.2px;
+}
+.ab-header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.ab-header-version {
+    font-size: 11px;
+    color: var(--ab-text-dim);
+    font-weight: 500;
+    letter-spacing: 0.3px;
+}
+.ab-modal.small .ab-header {
+    justify-content: center;
+}
+.ab-modal.small .ab-header h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
 }
 .ab-close-icon {
     cursor: pointer;
     opacity: 0.7;
-    transition: opacity 0.2s;
+    transition: opacity 0.15s;
     display: flex;
 }
 .ab-close-icon:hover { opacity: 1; }
+.ab-close-icon:focus-visible {
+    outline: 2px solid var(--ab-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
 .ab-close-icon svg { width: 20px; height: 20px; fill: var(--ab-text); }
 
 /* ── Tabs ── */
@@ -100,7 +129,7 @@ export const COMPANION_MODAL_CSS = `
     font-weight: 500;
     color: var(--ab-text-dim);
     border-bottom: 2px solid transparent;
-    transition: all 0.2s;
+    transition: all 0.15s;
     user-select: none;
     letter-spacing: 0.2px;
 }
@@ -111,8 +140,12 @@ export const COMPANION_MODAL_CSS = `
 .ab-tab.active {
     color: var(--ab-accent);
     border-bottom-color: var(--ab-accent);
-    background: rgba(59,130,246,0.1);
+    background: rgba(47,107,255,0.1);
     font-weight: 600;
+}
+.ab-tab:focus-visible {
+    outline: 2px solid var(--ab-accent);
+    outline-offset: -2px;
 }
 
 /* ── Content ── */
@@ -141,6 +174,11 @@ export const COMPANION_MODAL_CSS = `
     display: flex;
     flex-direction: column;
     gap: 6px;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+.ab-card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(30, 41, 59, 0.8);
 }
 .ab-card-title {
     font-size: 11px;
@@ -174,7 +212,11 @@ export const COMPANION_MODAL_CSS = `
     background: rgba(255,255,255,0.1);
     border-color: rgba(255,255,255,0.2);
 }
-.ab-btn:active { transform: scale(0.98); }
+.ab-btn:active { transform: scale(0.98); transition-duration: 0.05s; }
+.ab-btn:focus-visible {
+    outline: 2px solid var(--ab-accent);
+    outline-offset: 2px;
+}
 .ab-btn.primary {
     background: var(--ab-accent);
     border-color: var(--ab-accent);
@@ -195,7 +237,7 @@ export const COMPANION_MODAL_CSS = `
     font-size: 12px;
     text-transform: uppercase;
     color: var(--ab-accent);
-    border-bottom: 1px solid rgba(59,130,246,0.3);
+    border-bottom: 1px solid rgba(47,107,255,0.3);
     padding-bottom: 4px;
 }
 .ab-table {
@@ -207,6 +249,10 @@ export const COMPANION_MODAL_CSS = `
     padding: 4px 0;
     border-bottom: 1px solid rgba(255,255,255,0.05);
     word-break: break-all;
+    transition: background 0.1s ease;
+}
+.ab-table tr:hover td {
+    background: rgba(255, 255, 255, 0.03);
 }
 .ab-table td:first-child {
     color: var(--ab-text-dim);
@@ -226,7 +272,7 @@ export const COMPANION_MODAL_CSS = `
     font-weight: 500;
     z-index: 2147483647;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    animation: ab-slide-up 0.3s forwards;
+    animation: ab-slide-up 0.2s forwards;
 }
 @keyframes ab-slide-up {
     from { transform: translateY(20px); opacity: 0; }

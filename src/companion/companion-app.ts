@@ -10,6 +10,7 @@
 
 import { ModuleManager } from "./module-manager";
 import { CompanionModal } from "./companion-modal";
+import { COMPANION_LOGO_WHITE_SVG } from "./brand-logo";
 import { diag } from "./dev";
 
 // ---------------------------------------------------------------------------
@@ -33,12 +34,17 @@ const LAUNCHER_CSS = `
     align-items: center;
     justify-content: center;
     box-shadow: 0 4px 16px rgba(47,107,255,0.4);
-    transition: all 0.2s ease;
-    font-size: 16px;
-    font-weight: 700;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    transition: all 0.15s ease;
     user-select: none;
     touch-action: none;
+    overflow: hidden;
+    padding: 0;
+}
+
+#ab-companion-launcher img {
+    width: 26px;
+    height: 26px;
+    pointer-events: none;
 }
 
 #ab-companion-launcher:hover {
@@ -49,15 +55,17 @@ const LAUNCHER_CSS = `
 
 #ab-companion-launcher:active {
     transform: scale(0.95);
+    transition-duration: 0.05s;
 }
 
 #ab-companion-launcher.active {
-    background: #EF5350;
-    box-shadow: 0 4px 16px rgba(239,83,80,0.4);
+    background: #2F6BFF;
+    box-shadow: 0 0 0 3px rgba(47,107,255,0.3), 0 4px 16px rgba(47,107,255,0.5);
 }
 
 #ab-companion-launcher.active:hover {
-    background: #E57373;
+    background: #4A82FF;
+    box-shadow: 0 0 0 3px rgba(47,107,255,0.4), 0 6px 24px rgba(47,107,255,0.6);
 }
 `;
 
@@ -111,23 +119,23 @@ export class CompanionApp {
         const btn = document.createElement("button");
         btn.id = "ab-companion-launcher";
         btn.title = "Companion";
-        btn.textContent = "C";
+        btn.innerHTML = COMPANION_LOGO_WHITE_SVG;
         btn.addEventListener("click", () => this.onLauncherClick());
         document.body.appendChild(btn);
         this.launcher = btn;
+
+        // Register visibility change callback to keep launcher state synced
+        const modal = CompanionModal.getInstance();
+        modal.setOnVisibilityChange(() => this.syncLauncherState());
+    }
+
+    private syncLauncherState(): void {
+        if (!this.launcher) return;
+        const modal = CompanionModal.getInstance();
+        this.launcher.classList.toggle("active", modal.isVisible);
     }
 
     private onLauncherClick(): void {
-        const modal = CompanionModal.getInstance();
-        modal.toggle();
-
-        // Update launcher active state
-        if (this.launcher) {
-            if (modal.isVisible) {
-                this.launcher.classList.add("active");
-            } else {
-                this.launcher.classList.remove("active");
-            }
-        }
+        CompanionModal.getInstance().toggle();
     }
 }
