@@ -4,6 +4,19 @@
  * DOM-based widget that displays live finance data from FinanceController.
  * Subscribes to state changes and renders loading/error/loaded states.
  * Includes a shift selector for Morning / Day / Night intervals.
+ * Manual refresh only — no automatic polling.
+ *
+ * Transaction identity:
+ *   The API does not expose a stable transaction ID. Fallback identity is
+ *   composed of: date.getTime() + ladyID + userID + operation + sum.
+ *   This combination is unique in practice — two transactions with identical
+ *   timestamp, lady, user, operation, and sum would be extremely rare.
+ *
+ * Incremental rendering:
+ *   - Preserves exact transaction ordering from FinanceController.
+ *   - Supports new, removed, and replaced transactions.
+ *   - Falls back to full rebuild on structural changes (shift, waiting, empty).
+ *   - Reuses existing DOM nodes where possible for performance.
  *
  * Inherits window management (drag, resize, collapse, persist) from CompanionWindow.
  *
@@ -52,6 +65,24 @@ const DEFAULT_STATE = {
     hidden: false,
 };
 
+/** Highlight duration in milliseconds. */
+const HIGHLIGHT_DURATION_MS = 2_000;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a stable identity key for a transaction.
+ *
+ * Fallback identity — the API does not expose a stable transaction ID.
+ * Composed of: date.getTime() + ladyID + userID + operation + sum.
+ * This combination is unique in practice.
+ */
+function txIdentity(tx: FinanceTransaction): string {
+    return `${tx.date.getTime()}_${tx.ladyID}_${tx.userID}_${tx.operation}_${tx.sum}`;
+}
+
 // ---------------------------------------------------------------------------
 // FinanceWidget
 // ---------------------------------------------------------------------------
@@ -59,10 +90,26 @@ const DEFAULT_STATE = {
 export class FinanceWidget extends CompanionWindow {
     private readonly controller: FinanceController;
     private readonly unsubscribe: () => void;
-    private refreshBtn: HTMLButtonElement | null = null;
     private shiftBtn: HTMLButtonElement | null = null;
     private shiftDropdown: HTMLDivElement | null = null;
     private shiftOptions: HTMLElement[] = [];
+    private txContainerEl: HTMLDivElement | null = null;
+    private bodyRefreshBtn: HTMLButtonElement | null = null;
+
+    /** Currently displayed transaction identity keys in order. */
+    private displayedTxIds: string[] = [];
+
+    /** Map of identity → row DOM element for reuse. */
+    private txRowCache: Map<string, HTMLDivElement> = new Map();
+
+    /** Previous shift for structural change detection. */
+    private prevShift: ShiftType | null = null;
+
+    /** Previous waiting state for structural change detection. */
+    private prevIsWaiting: boolean | null = null;
+
+    /** Previous filtered count for structural change detection. */
+    private prevFilteredCount: number = -1;
 
     constructor(controller: FinanceController, config: FinanceWidgetConfig = {}) {
         const windowConfig: CompanionWindowConfig = {
@@ -96,10 +143,108 @@ export class FinanceWidget extends CompanionWindow {
         }
         this.shiftOptions = [];
 
-        this.refreshBtn = null;
         this.shiftBtn = null;
         this.shiftDropdown = null;
+        this.txContainerEl = null;
+        this.bodyRefreshBtn = null;
+        this.txRowCache.clear();
+        this.displayedTxIds = [];
         super.destroy();
+    }
+
+    /** Show the widget. */
+    show(): void {
+        super.show();
+    }
+
+    /** Hide the widget. */
+    hide(): void {
+        super.hide();
+    }
+
+    // -------------------------------------------------------------------------
+    // Structural change detection
+    // -------------------------------------------------------------------------
+
+    /** Check if a full rebuild is required. */
+    private needsFullRebuild(shift: ShiftType, isWaiting: boolean, filteredCount: number): boolean {
+        if (this.prevShift !== shift) return true;
+        if (this.prevIsWaiting !== isWaiting) return true;
+        if (this.prevFilteredCount === -1) return true; // First render
+        if (this.prevFilteredCount === 0 && filteredCount > 0) return true;
+        if (this.prevFilteredCount > 0 && filteredCount === 0) return true;
+        return false;
+    }
+
+    private recordStructuralState(shift: ShiftType, isWaiting: boolean, filteredCount: number): void {
+        this.prevShift = shift;
+        this.prevIsWaiting = isWaiting;
+        this.prevFilteredCount = filteredCount;
+    }
+
+    // -------------------------------------------------------------------------
+    // Incremental transaction rendering
+    // -------------------------------------------------------------------------
+
+    /**
+     * Rebuild the transaction container's children in correct order.
+     * Reuses existing DOM nodes from cache. Highlights newly added rows.
+     */
+    private updateTxRows(filtered: FinanceTransaction[]): void {
+        if (!this.txContainerEl) return;
+
+        const newIds: string[] = [];
+        const newIdSet = new Set<string>();
+
+        for (const tx of filtered) {
+            const id = txIdentity(tx);
+            newIds.push(id);
+            if (!this.txRowCache.has(id)) {
+                newIdSet.add(id);
+                this.txRowCache.set(id, this.createTransactionRow(tx));
+            }
+        }
+
+        // Detect removed transactions
+        const newIdLookup = new Set(newIds);
+        for (const oldId of this.displayedTxIds) {
+            if (!newIdLookup.has(oldId)) {
+                this.txRowCache.delete(oldId);
+            }
+        }
+
+        // Rebuild children in correct order
+        const fragment = document.createDocumentFragment();
+        for (const id of newIds) {
+            const row = this.txRowCache.get(id);
+            if (row) {
+                if (newIdSet.has(id)) {
+                    this.applyHighlight(row);
+                }
+                fragment.appendChild(row);
+            }
+        }
+
+        // Remove header, then replace all rows
+        const header = this.txContainerEl.querySelector(`.${this.classPrefix}-tx-header`);
+        this.txContainerEl.innerHTML = "";
+        if (header) {
+            this.txContainerEl.appendChild(header);
+        }
+        this.txContainerEl.appendChild(fragment);
+
+        this.displayedTxIds = newIds;
+    }
+
+    /** Apply a temporary highlight to a row. */
+    private applyHighlight(row: HTMLDivElement): void {
+        row.classList.remove(`${this.classPrefix}-tx-new`);
+        // Force reflow to restart animation
+        void row.offsetWidth;
+        row.classList.add(`${this.classPrefix}-tx-new`);
+        setTimeout(() => {
+            row.classList.remove(`${this.classPrefix}-tx-new`);
+        }, HIGHLIGHT_DURATION_MS);
     }
 
     // -------------------------------------------------------------------------
@@ -116,7 +261,6 @@ export class FinanceWidget extends CompanionWindow {
             this.createRoot();
         }
 
-        this.updateRefreshButton(state.status);
         this.updateShiftButton(state.shift);
         if (!this.win.collapsed) {
             this.updateContent(state);
@@ -196,12 +340,6 @@ export class FinanceWidget extends CompanionWindow {
             shiftDropdown.appendChild(option);
         }
 
-        // Refresh button
-        const refreshBtn = document.createElement("button");
-        refreshBtn.className = `${this.classPrefix}-btn`;
-        refreshBtn.title = "Refresh";
-        refreshBtn.textContent = "\u21BB";
-
         // Collapse button
         const collapseBtn = document.createElement("button");
         collapseBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-collapse-btn`;
@@ -216,7 +354,6 @@ export class FinanceWidget extends CompanionWindow {
 
         actions.appendChild(shiftBtn);
         actions.appendChild(shiftDropdown);
-        actions.appendChild(refreshBtn);
         actions.appendChild(collapseBtn);
         actions.appendChild(closeBtn);
 
@@ -240,7 +377,6 @@ export class FinanceWidget extends CompanionWindow {
         root.appendChild(resizeHandle);
 
         this.root = root;
-        this.refreshBtn = refreshBtn;
         this.shiftBtn = shiftBtn;
         this.shiftDropdown = shiftDropdown;
         this.contentEl = content;
@@ -249,7 +385,6 @@ export class FinanceWidget extends CompanionWindow {
 
         // Attach Finance-specific event listeners
         shiftBtn.addEventListener("click", this.onShiftToggle);
-        refreshBtn.addEventListener("click", this.onRefreshClick);
 
         this.container.appendChild(root);
 
@@ -260,12 +395,6 @@ export class FinanceWidget extends CompanionWindow {
     // -------------------------------------------------------------------------
     // State-based rendering
     // -------------------------------------------------------------------------
-
-    private updateRefreshButton(status: string): void {
-        if (!this.refreshBtn) return;
-        this.refreshBtn.disabled = status === "loading";
-        this.refreshBtn.textContent = status === "loading" ? "\u2026" : "\u21BB";
-    }
 
     private updateShiftButton(shift: ShiftType): void {
         if (!this.shiftBtn || !this.shiftDropdown) return;
@@ -286,12 +415,19 @@ export class FinanceWidget extends CompanionWindow {
     private updateContent(state: FinanceState): void {
         if (!this.contentEl) return;
 
+        // Update body refresh button state
+        this.updateBodyRefreshButton(state.status);
+
         switch (state.status) {
             case "idle":
                 this.renderIdle();
                 break;
             case "loading":
-                this.renderLoading();
+                // Preserve existing content during refreshes
+                // Only show loading state on initial load
+                if (this.displayedTxIds.length === 0 && !this.txContainerEl) {
+                    this.renderLoading();
+                }
                 break;
             case "loaded":
                 this.renderLoaded(state);
@@ -305,6 +441,7 @@ export class FinanceWidget extends CompanionWindow {
     private renderIdle(): void {
         if (!this.contentEl) return;
         this.contentEl.innerHTML = "";
+        this.resetTxState();
         const message = this.createMessage("Ready to load finance data.");
         this.contentEl.appendChild(message);
     }
@@ -312,13 +449,13 @@ export class FinanceWidget extends CompanionWindow {
     private renderLoading(): void {
         if (!this.contentEl) return;
         this.contentEl.innerHTML = "";
+        this.resetTxState();
         const message = this.createMessage("Loading\u2026");
         this.contentEl.appendChild(message);
     }
 
     private renderLoaded(state: FinanceState): void {
         if (!this.contentEl) return;
-        this.contentEl.innerHTML = "";
 
         const def = FinanceShift.getDefinition(state.shift);
         const allTransactions = state.data?.list ?? [];
@@ -329,6 +466,31 @@ export class FinanceWidget extends CompanionWindow {
         );
 
         const filteredSum = filtered.reduce((acc, tx) => acc + tx.sum, 0);
+
+        // Check if structural rebuild is needed
+        const needsRebuild = this.needsFullRebuild(state.shift, isWaiting, filtered.length);
+
+        if (needsRebuild) {
+            this.fullRebuild(state.shift, isWaiting, filtered, filteredSum, def);
+        } else {
+            this.incrementalUpdate(filtered, filteredSum);
+        }
+
+        this.recordStructuralState(state.shift, isWaiting, filtered.length);
+    }
+
+    /** Full rebuild of the entire content area. */
+    private fullRebuild(
+        shift: ShiftType,
+        isWaiting: boolean,
+        filtered: FinanceTransaction[],
+        filteredSum: number,
+        def: ReturnType<typeof FinanceShift.getDefinition>
+    ): void {
+        if (!this.contentEl) return;
+
+        this.contentEl.innerHTML = "";
+        this.resetTxState();
 
         // Shift info section
         const shiftInfo = document.createElement("div");
@@ -373,24 +535,38 @@ export class FinanceWidget extends CompanionWindow {
         creditsRow.appendChild(creditsLabel);
         creditsRow.appendChild(creditsValue);
 
-        const divider2 = document.createElement("div");
-        divider2.className = `${this.classPrefix}-divider`;
-
         this.contentEl.appendChild(shiftInfo);
         this.contentEl.appendChild(divider1);
         this.contentEl.appendChild(creditsRow);
-        this.contentEl.appendChild(divider2);
+
+        // Refresh button
+        const refreshBtn = document.createElement("button");
+        refreshBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-btn-full`;
+        refreshBtn.textContent = "Refresh";
+        refreshBtn.addEventListener("click", this.onBodyRefreshClick);
+        this.bodyRefreshBtn = refreshBtn;
+        this.contentEl.appendChild(refreshBtn);
 
         if (isWaiting) {
+            const divider2 = document.createElement("div");
+            divider2.className = `${this.classPrefix}-divider`;
+            this.contentEl.appendChild(divider2);
             const waitingMsg = this.createMessage(`Waiting for Night shift (${def.timeDisplay}).`);
             this.contentEl.appendChild(waitingMsg);
             return;
         }
 
         if (filtered.length === 0) {
+            const divider2 = document.createElement("div");
+            divider2.className = `${this.classPrefix}-divider`;
+            this.contentEl.appendChild(divider2);
             const empty = this.createMessage("No transactions for this shift.");
             this.contentEl.appendChild(empty);
         } else {
+            const divider2 = document.createElement("div");
+            divider2.className = `${this.classPrefix}-divider`;
+            this.contentEl.appendChild(divider2);
+
             const txContainer = document.createElement("div");
             txContainer.className = `${this.classPrefix}-tx-container`;
 
@@ -402,23 +578,64 @@ export class FinanceWidget extends CompanionWindow {
             headerRow.appendChild(this.createTxHeaderCell("Credits"));
             txContainer.appendChild(headerRow);
 
+            // Build rows in order, populate cache
+            const newIds: string[] = [];
             for (const tx of filtered) {
-                txContainer.appendChild(this.createTransactionRow(tx));
+                const id = txIdentity(tx);
+                const row = this.createTransactionRow(tx);
+                this.txRowCache.set(id, row);
+                txContainer.appendChild(row);
+                newIds.push(id);
             }
+            this.displayedTxIds = newIds;
 
             this.contentEl.appendChild(txContainer);
+            this.txContainerEl = txContainer;
+        }
+    }
+
+    /** Incremental update: reuse rows, preserve order, highlight new. */
+    private incrementalUpdate(filtered: FinanceTransaction[], filteredSum: number): void {
+        // Update credits value
+        this.updateCreditsValue(filteredSum);
+
+        // Update transaction rows if container exists
+        if (this.txContainerEl && filtered.length > 0) {
+            this.updateTxRows(filtered);
+        }
+    }
+
+    /** Update the credits value without rebuilding the entire section. */
+    private updateCreditsValue(sum: number): void {
+        if (!this.contentEl) return;
+        const creditsValue = this.contentEl.querySelector(
+            `.${this.classPrefix}-row .${this.classPrefix}-value.${this.classPrefix}-accent`
+        ) as HTMLSpanElement | null;
+        if (creditsValue) {
+            creditsValue.textContent = sum.toLocaleString();
         }
     }
 
     private renderError(state: FinanceState): void {
         if (!this.contentEl) return;
         this.contentEl.innerHTML = "";
+        this.resetTxState();
 
         const errorEl = document.createElement("div");
         errorEl.className = `${this.classPrefix}-error`;
         errorEl.textContent = state.error ?? "Unknown error";
 
         this.contentEl.appendChild(errorEl);
+    }
+
+    /** Reset transaction rendering state. */
+    private resetTxState(): void {
+        this.txContainerEl = null;
+        this.displayedTxIds = [];
+        this.txRowCache.clear();
+        this.prevShift = null;
+        this.prevIsWaiting = null;
+        this.prevFilteredCount = -1;
     }
 
     // -------------------------------------------------------------------------
@@ -467,10 +684,15 @@ export class FinanceWidget extends CompanionWindow {
         return el;
     }
 
-    private onRefreshClick = (): void => {
+    private onBodyRefreshClick = (): void => {
         if (this.destroyed) return;
         this.controller.refresh();
     };
+
+    private updateBodyRefreshButton(status: string): void {
+        if (!this.bodyRefreshBtn) return;
+        this.bodyRefreshBtn.disabled = status === "loading";
+    }
 
     private onShiftToggle = (): void => {
         if (this.destroyed || !this.shiftDropdown) return;

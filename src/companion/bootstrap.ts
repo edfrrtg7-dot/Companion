@@ -5,8 +5,8 @@
  * Creates FinanceController, FinanceWidget, CompanionModal, CompanionApp.
  *
  * Two independent systems:
- *   - Companion: launcher → modal (Dashboard | Manager | Diagnostics)
- *   - Finance: standalone FinanceWidget, opened via Finance Module API
+ *   - Companion: launcher → modal (Status | Actions | Finance)
+ *   - Finance: standalone FinanceWidget, auto-launched on startup, opened via Finance Module API
  *
  * Responsibilities:
  *   - Wait for DOM ready
@@ -19,11 +19,12 @@
 import { CompanionApp } from "./companion-app";
 import { CompanionModule } from "./companion-module";
 import { ModuleManager } from "./module-manager";
-import { CompanionModal, setFinanceController } from "./companion-modal";
+import { CompanionModal } from "./companion-modal";
 import { FinanceController } from "./finance-controller";
 import { FinanceWidget } from "./finance-widget";
 import { FINANCE_WIDGET_CSS } from "./finance-widget.css";
 import { collectDiagnostics } from "./companion-diagnostics";
+import { setFinanceController } from "./companion-diagnostics-collectors";
 import { diag, diagError, diagWarn } from "./dev";
 import { runMigrations } from "./storage-migration";
 import { setRegisteredModules, exposeDiagnostics } from "./companion-diagnostics";
@@ -123,6 +124,9 @@ function createApp(): void {
 
     diag("Starting CompanionApp");
     app.start();
+
+    // Auto-launch Finance on startup
+    manager.open("finance");
 
     exposeDiagnostics();
 }

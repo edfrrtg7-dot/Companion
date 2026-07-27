@@ -1,9 +1,4 @@
-/**
- * FinanceWidget Stylesheet
- *
- * Complete CSS for the Finance widget.
- * Injected automatically during bootstrap.
- */
+import { Z } from "./layering";
 
 export const FINANCE_WIDGET_CSS = `
 /* Widget root */
@@ -20,7 +15,7 @@ export const FINANCE_WIDGET_CSS = `
     background: #1F2235;
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 10px;
-    z-index: 2147483646;
+    z-index: ${Z.widget};
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     color: #E0E0E0;
     box-shadow: 0 8px 32px 0 rgba(0,0,0,0.5);
@@ -129,12 +124,6 @@ export const FINANCE_WIDGET_CSS = `
 .ab-finance-header-actions button:hover {
     color: #E0E0E0;
     background: rgba(255,255,255,0.1);
-}
-
-/* Refresh button hover */
-.ab-finance-header-actions .ab-finance-btn:hover {
-    color: #59AFFF;
-    background: rgba(89,175,255,0.1);
 }
 
 /* Collapse button */
@@ -246,6 +235,13 @@ export const FINANCE_WIDGET_CSS = `
 .ab-finance-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+/* Fixed-width centered button variant */
+.ab-finance-btn-full {
+    width: 160px;
+    flex: none;
+    margin: 0 auto;
 }
 
 /* Divider */
@@ -419,5 +415,15 @@ export const FINANCE_WIDGET_CSS = `
     color: rgba(255,255,255,0.5);
     text-align: center;
     margin-top: 1px;
+}
+
+/* New transaction highlight */
+.ab-finance-tx-new {
+    animation: ab-finance-highlight 2s ease-out;
+}
+
+@keyframes ab-finance-highlight {
+    0% { background: rgba(89,175,255,0.25); }
+    100% { background: transparent; }
 }
 `;
