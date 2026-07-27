@@ -1,16 +1,35 @@
 import { Z } from "./layering";
 
-/**
- * CompanionModal CSS
- *
- * Original AgencyBooster Companion styles.
- * Restored from b44e683 — the last userscript commit.
- *
- * These are the exact CSS patterns used by the original overlay/modal system.
- * No redesign. No new visual elements. Just the original styles extracted into a module.
- */
+let modalStylesInjected = false;
 
-export const COMPANION_MODAL_CSS = `
+export function injectStyles(): void {
+    if (modalStylesInjected) return;
+    modalStylesInjected = true;
+    const style = document.createElement('style');
+    style.id = 'ab-companion-styles';
+    style.textContent = COMPANION_STYLES_CSS;
+    document.head.appendChild(style);
+}
+
+/** Show a temporary toast notification. */
+export function showToast(message: string, isError = false): void {
+    injectStyles();
+    const toast = document.createElement('div');
+    toast.className = 'ab-toast';
+    toast.textContent = message;
+    if (isError) toast.style.background = 'var(--ab-danger)';
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.style.animation = 'ab-slide-up 0.2s reverse forwards';
+        setTimeout(() => toast.remove(), 200);
+    }, 2500);
+}
+
+// ---------------------------------------------------------------------------
+// Companion styles
+// ---------------------------------------------------------------------------
+
+export const COMPANION_STYLES_CSS = `
 /* ── Variables ── */
 :root {
     --ab-bg: rgba(15, 23, 42, 0.85);
@@ -116,48 +135,30 @@ export const COMPANION_MODAL_CSS = `
 }
 .ab-close-icon svg { width: 20px; height: 20px; fill: var(--ab-text); }
 
-/* ── Tabs ── */
-.ab-tabs {
-    display: flex;
-    border-bottom: 1px solid var(--ab-border);
-    background: rgba(0,0,0,0.2);
-}
-.ab-tab {
-    flex: 1;
-    padding: 12px 8px;
-    text-align: center;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--ab-text-dim);
-    border-bottom: 2px solid transparent;
-    transition: all 0.15s;
-    user-select: none;
-    letter-spacing: 0.2px;
-}
-.ab-tab:hover {
-    color: var(--ab-text);
-    background: rgba(255,255,255,0.05);
-}
-.ab-tab.active {
-    color: var(--ab-accent);
-    border-bottom-color: var(--ab-accent);
-    background: rgba(47,107,255,0.1);
-    font-weight: 600;
-}
-.ab-tab:focus-visible {
-    outline: 2px solid var(--ab-accent);
-    outline-offset: -2px;
-}
-
 /* ── Content ── */
 .ab-content {
-    padding: 20px;
+    padding: 16px 20px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 16px;
-    max-height: 65vh;
+    max-height: 75vh;
+}
+
+/* ── Sections ── */
+.ab-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.ab-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--ab-accent);
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(47,107,255,0.3);
 }
 .ab-content::-webkit-scrollbar { width: 6px; }
 .ab-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
@@ -168,6 +169,9 @@ export const COMPANION_MODAL_CSS = `
     grid-template-columns: 1fr 1fr;
     gap: 12px;
 }
+.ab-grid-compact {
+    gap: 8px;
+}
 .ab-card {
     background: var(--ab-bg-card);
     border: 1px solid var(--ab-border);
@@ -177,6 +181,10 @@ export const COMPANION_MODAL_CSS = `
     flex-direction: column;
     gap: 6px;
     transition: border-color 0.15s ease, background 0.15s ease;
+}
+.ab-card-compact {
+    padding: 8px 10px;
+    gap: 4px;
 }
 .ab-card:hover {
     border-color: rgba(255, 255, 255, 0.15);
@@ -192,6 +200,37 @@ export const COMPANION_MODAL_CSS = `
     font-size: 15px;
     font-weight: 600;
     color: var(--ab-text);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* ── Status indicator ── */
+.ab-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ab-danger);
+    flex-shrink: 0;
+}
+.ab-status-dot.active {
+    background: var(--ab-success);
+}
+
+/* ── Actions grid ── */
+.ab-actions-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+.ab-actions-row .ab-btn {
+    justify-content: center;
+}
+
+/* ── Full-width button ── */
+.ab-btn-full {
+    width: 100%;
+    justify-content: center;
 }
 
 /* ── Buttons ── */

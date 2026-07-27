@@ -134,6 +134,44 @@ export class CrmService {
         return true;
     }
 
+    /**
+     * Read current delay values from profile data.
+     * Skips first message (set to 0 by applyDelays) and returns first non-zero delay.
+     */
+    static readDelays(data: Record<string, unknown>): { priv: number; broad: number } {
+        const detectDelay = (messages: any): number => {
+            if (!messages || typeof messages !== "object") return DEFAULT_DELAY;
+            const items = Object.values(messages);
+            if (items.length === 0) return DEFAULT_DELAY;
+
+            // Detect delay property from first item
+            const first = items[0];
+            if (!first || typeof first !== "object") return DEFAULT_DELAY;
+            const property = DELAY_PROPERTIES.find((p) => p in first);
+            if (!property) return DEFAULT_DELAY;
+
+            // Skip first item (set to 0), find first non-zero delay
+            for (let i = 1; i < items.length; i++) {
+                const item = items[i];
+                if (item && typeof item === "object") {
+                    const value = item[property];
+                    if (typeof value === "number" && value > 0) return value;
+                }
+            }
+
+            // Fallback: check first item if nothing else found
+            const firstValue = first[property];
+            if (typeof firstValue === "number" && firstValue >= 0) return firstValue;
+
+            return DEFAULT_DELAY;
+        };
+
+        return {
+            priv: detectDelay((data as any).messages),
+            broad: detectDelay((data as any).broadcast?.messages),
+        };
+    }
+
     /** Check if IB or BR engines are active. */
     static isEngineActive(data: Record<string, unknown>): boolean {
         const ibStatus = CrmService.getModuleStatus(data, "icebreaker");

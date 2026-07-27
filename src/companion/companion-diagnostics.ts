@@ -1,3 +1,5 @@
+// APACHE-2.0 LICENSE
+
 /**
  * Companion Diagnostics
  *

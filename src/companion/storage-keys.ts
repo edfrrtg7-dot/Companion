@@ -29,6 +29,12 @@ export const STORAGE_KEYS = {
 
     /** Storage version marker. */
     STORAGE_VERSION: "ab-storage-version",
+
+    /** Diagnostics error history. */
+    DIAGNOSTICS_ERROR_HISTORY: "ab-diag-error-history",
+
+    /** Diagnostics import history. */
+    DIAGNOSTICS_IMPORT_HISTORY: "ab-diag-import-history",
 } as const;
 
 /** Type-safe key type. */
