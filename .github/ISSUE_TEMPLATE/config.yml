@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Knowledge Base
+    url: https://github.com/edfrrtg7-dot/Companion/tree/master/knowledge
+    about: Please review the Knowledge Base before opening an issue.

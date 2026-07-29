@@ -135,6 +135,17 @@ See [Architecture](docs/architecture.md) and [AI Rules](docs/ai-rules.md).
 
 See [Roadmap](docs/roadmap.md) for detailed timeline.
 
+## Governance
+
+New work follows the documented governance workflow. Use the issue and pull request templates in `.github/` for submissions.
+
+- [EPIC Template](.github/ISSUE_TEMPLATE/epic.md)
+- [Investigation Template](.github/ISSUE_TEMPLATE/investigation.md)
+- [Bug Report Template](.github/ISSUE_TEMPLATE/bug_report.md)
+- [Pull Request Template](.github/PULL_REQUEST_TEMPLATE.md)
+
+See [Review Process](knowledge/10_REVIEW_PROCESS.md) for the full review workflow.
+
 ## License
 
 All Rights Reserved. See [LICENSE](LICENSE).
