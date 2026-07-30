@@ -101,6 +101,10 @@ localStorage.setItem("ab-dev", "1");
 
 ## Development
 
+### Knowledge Base
+
+See the [Knowledge Index](knowledge/INDEX.md) for the canonical engineering documentation index. [Knowledge Base documents](knowledge/README.md) cover project overview, architecture, components, APIs, and engineering philosophy.
+
 ### Coding Standards
 
 See [Coding Standards](docs/coding-standards.md) for complete guidelines.
