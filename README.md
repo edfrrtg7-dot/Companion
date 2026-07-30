@@ -154,6 +154,8 @@ New work follows the documented governance workflow. Use the issue and pull requ
 
 See [Review Process](knowledge/10_REVIEW_PROCESS.md) for the full review workflow.
 
+Architectural decisions are documented in the [ADR Index](docs/adr/README.md).
+
 ## License
 
 All Rights Reserved. See [LICENSE](LICENSE).

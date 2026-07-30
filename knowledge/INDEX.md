@@ -12,7 +12,8 @@ Documents defining project direction, accepted state, and change management.
 |---|---|---|
 | AGENTS.md | [`/AGENTS.md`](/AGENTS.md) | **Authoritative.** AI contributor entry point with reading order, principles, and workflow. |
 | Baseline | [`/knowledge/06_BASELINE.md`](/knowledge/06_BASELINE.md) | **Authoritative.** Accepted architectural state and foundation. |
-| Decision Log | [`/docs/decision-log.md`](/docs/decision-log.md) | Historical record of project decisions. |
+| Decision Log | [`/docs/decision-log.md`](/docs/decision-log.md) | Historical record of project decisions (pre-ADR system). |
+| ADR Index | [`/docs/adr/README.md`](/docs/adr/README.md) | **Authoritative.** Architecture Decision Record index with individual ADR files. |
 | Knowledge Base Index | [`/knowledge/README.md`](/knowledge/README.md) | Index of all Knowledge Base documents. |
 | Review Process | [`/knowledge/10_REVIEW_PROCESS.md`](/knowledge/10_REVIEW_PROCESS.md) | **Authoritative.** EPIC review and acceptance workflow. |
 | Roadmap | [`/knowledge/07_ROADMAP.md`](/knowledge/07_ROADMAP.md) | **Authoritative.** Planned architectural evolution. |
@@ -56,6 +57,7 @@ Documents describing platform structure, components, contracts, and rationale.
 |---|---|---|
 | Architecture | [`/knowledge/02_ARCHITECTURE.md`](/knowledge/02_ARCHITECTURE.md) | **Authoritative.** Platform layers, ownership, dependency direction, data flow. |
 | Architecture Decisions | [`/knowledge/08_ARCHITECTURE_DECISIONS.md`](/knowledge/08_ARCHITECTURE_DECISIONS.md) | **Authoritative.** Rationale behind architectural choices. |
+| ADR Records | [`/docs/adr/README.md`](/docs/adr/README.md) | **Authoritative.** Individual Architecture Decision Record files. |
 | Components | [`/knowledge/03_COMPONENTS.md`](/knowledge/03_COMPONENTS.md) | **Authoritative.** Component responsibilities, ownership, and evolution rules. |
 | Internal Infrastructure | [`/knowledge/05_INTERNAL_INFRASTRUCTURE.md`](/knowledge/05_INTERNAL_INFRASTRUCTURE.md) | **Authoritative.** Internal platform services and their boundaries. |
 | Project Overview | [`/knowledge/00_PROJECT_OVERVIEW.md`](/knowledge/00_PROJECT_OVERVIEW.md) | **Authoritative.** High-level project description, vision, scope. |
