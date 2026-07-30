@@ -257,6 +257,80 @@ The dependency graph is acyclic. There is no circular dependency between any two
 
 ---
 
+## Documentation Change Classes
+
+Every documentation change falls into one of five classes. The class determines review requirements and whether the Baseline is affected.
+
+| Class | Purpose | Examples | Review Required | EPIC Required | Baseline Changes |
+|-------|---------|----------|-----------------|---------------|------------------|
+| **Editorial** | Fix formatting, typos, broken links. No meaning change. | Correct a typo, fix a markdown issue, update a dead link | No (self-review sufficient) | No | No |
+| **Clarification** | Improve wording without changing meaning. | Reword an ambiguous sentence, add an example, restructure a paragraph | Yes (peer review) | No | No |
+| **Structural** | Reorganise, merge, or split documents. No content change. | Split a document into two, merge overlapping sections | Yes (peer review) | No | No |
+| **Architectural** | Change or add architectural content, contracts, or rules. | Add a new component description, update API contract, change a principle | Yes (full review) | Yes | Yes |
+| **Governance** | Change process, lifecycle, or governance rules. | Add a review step, change the lifecycle model, update ownership rules | Yes (full review) | Yes | Yes |
+
+Changes that span multiple classes follow the strictest applicable rules.
+
+---
+
+## Ownership
+
+Each documentation area has a designated conceptual owner responsible for consistency.
+
+| Area | Owner | Responsibility |
+|------|-------|----------------|
+| Knowledge Base | Knowledge Base itself (README.md serves as hub) | Maintain taxonomy, lifecycle, and navigation. Ensure no overlapping responsibilities. |
+| ADRs | ADR directory (`docs/adr/`) | Maintain ADR structure, numbering, and status conventions. Link to Baseline. |
+| Baseline | Baseline document (`06_BASELINE.md`) | Record accepted state. Ensure consistency with promoted EPICs and accepted ADRs. |
+| Review Process | Review Process document (`10_REVIEW_PROCESS.md`) | Keep review workflow current. Ensure alignment with Governance changes. |
+| Templates | Template directory (`templates/`, `.github/`) | Keep templates consistent with current process. Add or remove as process evolves. |
+| AGENTS.md | AGENTS.md itself | Maintain AI entry point. Ensure consistency with Knowledge Base governance. |
+
+Owners are documents, not individuals. When a document's owning area changes, the document must be updated.
+
+---
+
+## Consistency Rules
+
+1. **Update canonical source first.** When a concept changes, update its canonical document before updating any document that references it.
+2. **Reference instead of duplicate.** When a concept from one document is needed in another, use a relative path reference. Do not paraphrase or summarise in a way that can drift.
+3. **Related documents updated together.** When a canonical source changes, every document that references it must be checked for consistency. A documentation change is not complete until all affected references are updated.
+4. **Obsolete documentation removed or deprecated.** When a document is no longer needed, mark it Deprecated and then Archived. Do not leave orphaned or dangling documents.
+5. **No contradictory statements.** If two documents make statements about the same concept, those statements must agree. Contradictions are defects.
+6. **Terminology consistency.** Use terms exactly as defined in the Glossary (`11_GLOSSARY.md`). Do not introduce synonyms for defined terms.
+
+---
+
+## Documentation Impact Assessment
+
+An implementation EPIC MUST include a documentation impact assessment that evaluates:
+
+- **Which documents are affected.** List every document whose content must change.
+- **What changes are required.** For each affected document, specify the nature of the change (editorial, clarification, structural, architectural, governance).
+- **Whether the canonical source is updated.** If the change affects a concept with a canonical source, the canonical source must be updated first.
+- **Whether cross-references need updating.** Check all documents that reference the affected area for broken or stale references.
+
+No documentation change is required in the following cases:
+
+- Bug fixes that do not change documented behaviour.
+- Internal refactoring with no architectural impact.
+- Performance improvements that do not change observable behaviour.
+- Implementation of existing documented behaviour without deviation.
+
+In all other cases, the documentation impact assessment must be completed before the EPIC is accepted.
+
+---
+
+## Cross-Reference Policy
+
+1. **All cross-references must be valid.** A reference to a file that does not exist or a section that has been removed is a defect.
+2. **Circular references are prohibited.** Document A must not reference Document B if Document B already references Document A for the same concept, unless one reference is navigational (Previous/Next) and the other is a content reference.
+3. **Obsolete references must be updated or removed.** When a document is renamed, moved, deprecated, or archived, every document that references it must be updated.
+4. **Use relative paths.** References between documents within the same directory use relative paths (`../docs/adr/README.md`). This ensures references remain valid regardless of where the repository is checked out.
+5. **Anchor references should be explicit.** When referencing a specific section within a document, include the anchor text or section name so the target can be verified.
+
+---
+
 ## Cross-References
 
 - [ADR README](../docs/adr/README.md) — ADR lifecycle and status conventions.

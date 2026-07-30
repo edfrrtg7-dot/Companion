@@ -77,6 +77,22 @@ The review process itself is governed by the same procedures that govern archite
 
 ---
 
+## 8. Documentation Change Review
+
+Documentation-only changes follow a simplified review process. The review requirements depend on the change class as defined in [`README.md`](README.md#documentation-change-classes).
+
+| Change Class | Review Required | Verification |
+|--------------|-----------------|--------------|
+| Editorial | Self-review. No formal review required. | Verify the change renders correctly and links are valid. |
+| Clarification | Peer review. Another contributor reads for accuracy. | Verify the new wording does not change meaning. |
+| Structural | Peer review. Review focuses on navigation and completeness. | Verify no content was lost or duplicated. Verify all cross-references are valid. |
+| Architectural | Full review. Same as implementation EPIC review. | Verify consistency with Baseline and existing Knowledge Base. Full evidence hierarchy applies. |
+| Governance | Full review. Same as implementation EPIC review. | Verify alignment with Engineering Philosophy and Architecture Decisions. Full evidence hierarchy applies. |
+
+Documentation changes that accompany an implementation EPIC are reviewed as part of the EPIC review, not separately.
+
+---
+
 ## Navigation
 
 - **Previous:** [AI Rules](09_AI_RULES.md)
