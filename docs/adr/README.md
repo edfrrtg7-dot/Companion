@@ -1,5 +1,7 @@
 # Architecture Decision Records
 
+**Status:** Accepted
+
 ## Purpose
 
 Architecture Decision Records (ADRs) document significant architectural decisions made during the Companion project. Each ADR captures the context, the decision itself, and the consequences, preserving the rationale for future contributors.
@@ -35,6 +37,9 @@ Each ADR progresses through the following states:
 | **Accepted** | Approved and in effect. The decision is part of the current architecture. |
 | **Superseded** | Replaced by a later ADR. The original record is retained for historical traceability with a reference to the superseding ADR. |
 | **Deprecated** | No longer recommended but not yet formally replaced. Preserved for reference. |
+| **Archived** | Historical record only. No longer referenced but retained for traceability. |
+
+ADR statuses follow the [Knowledge Base documentation lifecycle](../../knowledge/README.md#documentation-lifecycle).
 
 ## Relationship to the Project Baseline
 

@@ -2,6 +2,8 @@
 
 **Purpose**
 
+**Status:** Accepted
+
 A formal review process ensures that every proposal, implementation, and change that seeks to become part of the accepted project baseline undergoes objective evaluation. The process determines whether work satisfies scope, architectural consistency, verification completeness, and documentation quality before it is promoted to the baseline.
 
 ---

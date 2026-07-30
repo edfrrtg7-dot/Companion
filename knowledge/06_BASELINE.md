@@ -2,7 +2,7 @@
 
 **Purpose:** Canonical reference for the accepted architectural state of the Companion project.
 
-**Status:** Draft
+**Status:** Accepted
 
 ---
 

@@ -14,7 +14,7 @@ Documents defining project direction, accepted state, and change management.
 | Baseline | [`/knowledge/06_BASELINE.md`](/knowledge/06_BASELINE.md) | **Authoritative.** Accepted architectural state and foundation. |
 | Decision Log | [`/docs/decision-log.md`](/docs/decision-log.md) | Historical record of project decisions (pre-ADR system). |
 | ADR Index | [`/docs/adr/README.md`](/docs/adr/README.md) | **Authoritative.** Architecture Decision Record index with individual ADR files. |
-| Knowledge Base Index | [`/knowledge/README.md`](/knowledge/README.md) | Index of all Knowledge Base documents. |
+| Knowledge Base Index | [`/knowledge/README.md`](/knowledge/README.md) | Knowledge Base hub with document table, lifecycle model, and authority matrix. |
 | Review Process | [`/knowledge/10_REVIEW_PROCESS.md`](/knowledge/10_REVIEW_PROCESS.md) | **Authoritative.** EPIC review and acceptance workflow. |
 | Roadmap | [`/knowledge/07_ROADMAP.md`](/knowledge/07_ROADMAP.md) | **Authoritative.** Planned architectural evolution. |
 
