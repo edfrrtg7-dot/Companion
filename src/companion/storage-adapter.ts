@@ -10,6 +10,8 @@
  * localStorage is used as fallback (userscript context).
  */
 
+import { getPlatform } from "./platform-interface";
+
 // ---------------------------------------------------------------------------
 // Interface
 // ---------------------------------------------------------------------------
@@ -40,7 +42,7 @@ export interface StorageAdapter {
 export class LocalStorageAdapter implements StorageAdapter {
     get(key: string): string | null {
         try {
-            return localStorage.getItem(key);
+            return getPlatform().localStorage.getItem(key);
         } catch {
             return null;
         }
@@ -48,7 +50,7 @@ export class LocalStorageAdapter implements StorageAdapter {
 
     set(key: string, value: string): void {
         try {
-            localStorage.setItem(key, value);
+            getPlatform().localStorage.setItem(key, value);
         } catch {
             // localStorage full or unavailable
         }
@@ -56,7 +58,7 @@ export class LocalStorageAdapter implements StorageAdapter {
 
     remove(key: string): void {
         try {
-            localStorage.removeItem(key);
+            getPlatform().localStorage.removeItem(key);
         } catch {
             // localStorage unavailable
         }
@@ -64,7 +66,7 @@ export class LocalStorageAdapter implements StorageAdapter {
 
     clear(): void {
         try {
-            localStorage.clear();
+            getPlatform().localStorage.clear();
         } catch {
             // localStorage unavailable
         }
@@ -72,7 +74,7 @@ export class LocalStorageAdapter implements StorageAdapter {
 
     exists(key: string): boolean {
         try {
-            return localStorage.getItem(key) !== null;
+            return getPlatform().localStorage.getItem(key) !== null;
         } catch {
             return false;
         }
@@ -108,23 +110,19 @@ export class ChromeStorageAdapter implements StorageAdapter {
      * will return from cache once hydrated.
      */
     private hydrate(): void {
-        try {
-            if (typeof chrome !== "undefined" && chrome.storage?.local) {
-                chrome.storage.local.get(null).then((all) => {
-                    for (const [key, value] of Object.entries(all)) {
-                        if (typeof value === "string") {
-                            this.cache.set(key, value);
-                        }
+        const cs = getPlatform().chromeStorage;
+        if (cs) {
+            cs.getAll().then((all) => {
+                for (const [key, value] of Object.entries(all)) {
+                    if (typeof value === "string") {
+                        this.cache.set(key, value);
                     }
-                    this.ready = true;
-                }).catch(() => {
-                    // chrome.storage not available
-                    this.ready = true;
-                });
-            } else {
+                }
                 this.ready = true;
-            }
-        } catch {
+            }).catch(() => {
+                this.ready = true;
+            });
+        } else {
             this.ready = true;
         }
     }
@@ -159,9 +157,7 @@ export class ChromeStorageAdapter implements StorageAdapter {
 
     private persist(key: string, value: string): void {
         try {
-            if (typeof chrome !== "undefined" && chrome.storage?.local) {
-                chrome.storage.local.set({ [key]: value });
-            }
+            getPlatform().chromeStorage?.set(key, value);
         } catch {
             // chrome.storage not available
         }
@@ -169,9 +165,7 @@ export class ChromeStorageAdapter implements StorageAdapter {
 
     private persistRemove(key: string): void {
         try {
-            if (typeof chrome !== "undefined" && chrome.storage?.local) {
-                chrome.storage.local.remove(key);
-            }
+            getPlatform().chromeStorage?.remove(key);
         } catch {
             // chrome.storage not available
         }
@@ -179,9 +173,7 @@ export class ChromeStorageAdapter implements StorageAdapter {
 
     private persistClear(): void {
         try {
-            if (typeof chrome !== "undefined" && chrome.storage?.local) {
-                chrome.storage.local.clear();
-            }
+            getPlatform().chromeStorage?.clear();
         } catch {
             // chrome.storage not available
         }

@@ -17,6 +17,7 @@
 
 import { StorageAdapter, LocalStorageAdapter, ChromeStorageAdapter } from "./storage-adapter";
 import { STORAGE_KEYS, StorageKey } from "./storage-keys";
+import { getPlatform } from "./platform-interface";
 
 // ---------------------------------------------------------------------------
 // Singleton
@@ -25,20 +26,30 @@ import { STORAGE_KEYS, StorageKey } from "./storage-keys";
 let adapter: StorageAdapter | null = null;
 
 /**
- * Get the active storage adapter.
- * ChromeStorageAdapter is preferred when chrome.storage is available.
- * LocalStorageAdapter is used as fallback.
+ * Initialize the storage adapter eagerly.
+ * Call this during bootstrap to drive adapter creation explicitly.
+ * Once called, all storage access goes through the selected adapter.
+ * Idempotent — safe to call multiple times.
  */
-function getAdapter(): StorageAdapter {
-    if (adapter) return adapter;
+export function initStorage(): void {
+    if (adapter) return;
 
-    // Try Chrome Storage first (extension context)
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+    if (getPlatform().chromeStorage) {
         adapter = new ChromeStorageAdapter();
     } else {
         adapter = new LocalStorageAdapter();
     }
+}
 
+/**
+ * Get the active storage adapter.
+ * Lazily initializes on first access (e.g. module-scope code in dev.ts).
+ * Bootstrap should call initStorage() to drive creation explicitly.
+ */
+function getAdapter(): StorageAdapter {
+    if (!adapter) {
+        initStorage();
+    }
     return adapter;
 }
 
@@ -93,7 +104,7 @@ export const StorageService = {
      * Useful for diagnostics.
      */
     getAdapterType(): string {
-        if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        if (getPlatform().chromeStorage) {
             return "chrome.storage.local";
         }
         return "localStorage";

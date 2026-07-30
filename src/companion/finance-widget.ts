@@ -29,11 +29,12 @@
  */
 
 import { CompanionWindow, CompanionWindowConfig } from "./companion-window";
-import { FinanceController, FinanceState, FinanceStateListener } from "./finance-controller";
+import { FinanceController, FinanceState, FinanceStateListener, type FinanceStatus, txIdentity } from "./finance-controller";
 import { FinanceTransaction } from "./finance-mapper";
 import { FinanceShift, ShiftType } from "./finance-shift";
 import { COMPANION_LOGO_SVG } from "./brand-logo";
 import { STORAGE_KEYS } from "./storage-keys";
+import { diag, isDevMode } from "./dev";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,27 +62,12 @@ const DEFAULT_STATE = {
     y: 24,
     width: 360,
     height: 380,
-    collapsed: false,
+    collapsed: true,
     hidden: false,
 };
 
 /** Highlight duration in milliseconds. */
 const HIGHLIGHT_DURATION_MS = 2_000;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Create a stable identity key for a transaction.
- *
- * Fallback identity — the API does not expose a stable transaction ID.
- * Composed of: date.getTime() + ladyID + userID + operation + sum.
- * This combination is unique in practice.
- */
-function txIdentity(tx: FinanceTransaction): string {
-    return `${tx.date.getTime()}_${tx.ladyID}_${tx.userID}_${tx.operation}_${tx.sum}`;
-}
 
 // ---------------------------------------------------------------------------
 // FinanceWidget
@@ -90,11 +76,10 @@ function txIdentity(tx: FinanceTransaction): string {
 export class FinanceWidget extends CompanionWindow {
     private readonly controller: FinanceController;
     private readonly unsubscribe: () => void;
-    private shiftBtn: HTMLButtonElement | null = null;
-    private shiftDropdown: HTMLDivElement | null = null;
-    private shiftOptions: HTMLElement[] = [];
     private txContainerEl: HTMLDivElement | null = null;
     private bodyRefreshBtn: HTMLButtonElement | null = null;
+    private headerRefreshBtn: HTMLButtonElement | null = null;
+    private cashDotEl: HTMLSpanElement | null = null;
 
     /** Currently displayed transaction identity keys in order. */
     private displayedTxIds: string[] = [];
@@ -111,6 +96,9 @@ export class FinanceWidget extends CompanionWindow {
     /** Previous filtered count for structural change detection. */
     private prevFilteredCount: number = -1;
 
+    /** Whether the first expand has occurred (for auto-refresh). */
+    private firstExpandDone = false;
+
     constructor(controller: FinanceController, config: FinanceWidgetConfig = {}) {
         const windowConfig: CompanionWindowConfig = {
             container: config.container,
@@ -121,10 +109,22 @@ export class FinanceWidget extends CompanionWindow {
         };
         super(windowConfig);
 
+        if (isDevMode()) {
+            diag("[FinanceWidget] constructor start");
+        }
+
         this.controller = controller;
         this.unsubscribe = this.controller.subscribe(this.onStateChange);
+        if (isDevMode()) {
+            diag("[FinanceWidget] before initial render, state:", this.controller.getState().status);
+        }
         this.render(this.controller.getState());
-        this.controller.refresh();
+        if (isDevMode()) {
+            diag("[FinanceWidget] after initial render, contentEl:", this.contentEl?.childElementCount, "isConnected:", this.contentEl?.isConnected);
+        }
+        if (isDevMode()) {
+            diag("[FinanceWidget] constructor end, deferred refresh to first expand");
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -137,16 +137,10 @@ export class FinanceWidget extends CompanionWindow {
         this.unsubscribe();
         this.controller.cancelPending();
 
-        // Remove shift option listeners
-        for (const option of this.shiftOptions) {
-            option.removeEventListener("click", this.onShiftSelect);
-        }
-        this.shiftOptions = [];
-
-        this.shiftBtn = null;
-        this.shiftDropdown = null;
         this.txContainerEl = null;
         this.bodyRefreshBtn = null;
+        this.headerRefreshBtn = null;
+        this.cashDotEl = null;
         this.txRowCache.clear();
         this.displayedTxIds = [];
         super.destroy();
@@ -160,6 +154,17 @@ export class FinanceWidget extends CompanionWindow {
     /** Hide the widget. */
     hide(): void {
         super.hide();
+    }
+
+    /** Expand the widget and trigger initial refresh on first expand. */
+    override expand(): void {
+        const wasCollapsed = this.win.collapsed;
+        super.expand();
+        if (wasCollapsed && !this.firstExpandDone) {
+            this.firstExpandDone = true;
+            if (isDevMode()) diag("[FinanceWidget] first expand, triggering refresh");
+            this.controller.refresh();
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -253,17 +258,35 @@ export class FinanceWidget extends CompanionWindow {
 
     private onStateChange: FinanceStateListener = (state) => {
         if (this.destroyed) return;
+        if (isDevMode()) {
+            diag("[FinanceWidget] onStateChange:", state.status, "destroyed:", this.destroyed);
+        }
         this.render(state);
     };
 
     private render(state: FinanceState): void {
+        if (isDevMode()) {
+            diag("[FinanceWidget] render() start, state:", state.status, "root:", !!this.root, "collapsed:", this.win.collapsed);
+        }
         if (!this.root) {
+            if (isDevMode()) {
+                diag("[FinanceWidget] render() - no root, calling createRoot()");
+            }
             this.createRoot();
         }
 
-        this.updateShiftButton(state.shift);
+        this.updateCashIndicator(state);
+        this.updateHeaderRefreshButton(state.status);
         if (!this.win.collapsed) {
+            if (isDevMode()) {
+                diag("[FinanceWidget] render() - not collapsed, calling updateContent()");
+            }
             this.updateContent(state);
+        } else if (isDevMode()) {
+            diag("[FinanceWidget] render() - WIDGET IS COLLAPSED, skipping updateContent");
+        }
+        if (isDevMode()) {
+            diag("[FinanceWidget] render() end");
         }
     }
 
@@ -272,6 +295,7 @@ export class FinanceWidget extends CompanionWindow {
     // -------------------------------------------------------------------------
 
     private createRoot(): void {
+        if (isDevMode()) diag("[FinanceWidget] createRoot() start, saved:", this.win);
         const saved = this.win;
 
         const root = document.createElement("div");
@@ -285,10 +309,12 @@ export class FinanceWidget extends CompanionWindow {
         root.style.right = "auto";
 
         if (saved.hidden) {
+            if (isDevMode()) diag("[FinanceWidget] createRoot() - widget is HIDDEN");
             root.style.display = "none";
         }
 
         if (saved.collapsed) {
+            if (isDevMode()) diag("[FinanceWidget] createRoot() - widget is COLLAPSED");
             root.classList.add(`${this.classPrefix}-collapsed`);
             root.style.width = "330px";
             root.style.height = "44px";
@@ -317,28 +343,36 @@ export class FinanceWidget extends CompanionWindow {
         title.appendChild(logo);
         title.appendChild(titleText);
 
+        // CASH indicator
+        const cashIndicator = document.createElement("div");
+        cashIndicator.className = `${this.classPrefix}-cash-indicator`;
+
+        const cashIcon = document.createElement("span");
+        cashIcon.className = `${this.classPrefix}-cash-icon`;
+        cashIcon.textContent = "\uD83D\uDCB0";
+
+        const cashLabel = document.createElement("span");
+        cashLabel.className = `${this.classPrefix}-cash-label`;
+        cashLabel.textContent = "CASH";
+
+        const cashDot = document.createElement("span");
+        cashDot.className = `${this.classPrefix}-cash-dot`;
+        cashDot.textContent = "\u25CF";
+        this.cashDotEl = cashDot;
+
+        cashIndicator.appendChild(cashIcon);
+        cashIndicator.appendChild(cashLabel);
+        cashIndicator.appendChild(cashDot);
+
         // Header actions
         const actions = document.createElement("div");
         actions.className = `${this.classPrefix}-header-actions`;
 
-        // Shift button
-        const shiftBtn = document.createElement("button");
-        shiftBtn.className = `${this.classPrefix}-shift-btn`;
-        shiftBtn.title = "Shift";
-
-        // Shift dropdown
-        const shiftDropdown = document.createElement("div");
-        shiftDropdown.className = `${this.classPrefix}-shift-dropdown`;
-
-        for (const def of FinanceShift.getAllDefinitions()) {
-            const option = document.createElement("button");
-            option.className = `${this.classPrefix}-shift-option`;
-            option.dataset.shift = def.type;
-            option.innerHTML = `<span class="${this.classPrefix}-shift-name">${def.label}</span><span class="${this.classPrefix}-shift-time">${def.timeDisplay}</span>`;
-            option.addEventListener("click", this.onShiftSelect);
-            this.shiftOptions.push(option);
-            shiftDropdown.appendChild(option);
-        }
+        // Refresh button
+        const headerRefreshBtn = document.createElement("button");
+        headerRefreshBtn.className = `${this.classPrefix}-header-refresh-btn`;
+        headerRefreshBtn.title = "Refresh";
+        headerRefreshBtn.textContent = "\u27F3";
 
         // Collapse button
         const collapseBtn = document.createElement("button");
@@ -352,12 +386,12 @@ export class FinanceWidget extends CompanionWindow {
         closeBtn.title = "Close";
         closeBtn.textContent = "\u2715";
 
-        actions.appendChild(shiftBtn);
-        actions.appendChild(shiftDropdown);
+        actions.appendChild(headerRefreshBtn);
         actions.appendChild(collapseBtn);
         actions.appendChild(closeBtn);
 
         dragHandle.appendChild(title);
+        dragHandle.appendChild(cashIndicator);
         dragHandle.appendChild(actions);
 
         // Content
@@ -377,68 +411,86 @@ export class FinanceWidget extends CompanionWindow {
         root.appendChild(resizeHandle);
 
         this.root = root;
-        this.shiftBtn = shiftBtn;
-        this.shiftDropdown = shiftDropdown;
         this.contentEl = content;
         this.collapseBtn = collapseBtn;
         this.closeBtn = closeBtn;
+        this.headerRefreshBtn = headerRefreshBtn;
+        this.cashDotEl = cashDot;
 
         // Attach Finance-specific event listeners
-        shiftBtn.addEventListener("click", this.onShiftToggle);
+        headerRefreshBtn.addEventListener("click", this.onHeaderRefreshClick);
 
         this.container.appendChild(root);
 
         // Initialize window behavior (drag, resize, keyboard, collapse/close buttons)
         this.initWindow(dragHandle, resizeHandle);
+
+        if (isDevMode()) diag("[FinanceWidget] createRoot() end, contentEl:", !!this.contentEl, "root in DOM:", this.root.isConnected);
     }
 
     // -------------------------------------------------------------------------
     // State-based rendering
     // -------------------------------------------------------------------------
 
-    private updateShiftButton(shift: ShiftType): void {
-        if (!this.shiftBtn || !this.shiftDropdown) return;
-        const def = FinanceShift.getDefinition(shift);
-        this.shiftBtn.textContent = `${def.label} \u25BE`;
+    private updateCashIndicator(state: FinanceState): void {
+        if (!this.cashDotEl) return;
+        const hasUnviewed = state.unviewedTransactions > 0;
+        this.cashDotEl.classList.toggle("pulse", hasUnviewed);
+    }
 
-        const options = this.shiftDropdown.querySelectorAll(`.${this.classPrefix}-shift-option`);
-        options.forEach((opt) => {
-            const htmlOpt = opt as HTMLElement;
-            if (htmlOpt.dataset.shift === shift) {
-                htmlOpt.classList.add("active");
-            } else {
-                htmlOpt.classList.remove("active");
-            }
-        });
+    private updateHeaderRefreshButton(status: FinanceStatus): void {
+        if (!this.headerRefreshBtn) return;
+        const isLoading = status === "loading";
+        this.headerRefreshBtn.disabled = isLoading;
+        this.headerRefreshBtn.classList.toggle("spinning", isLoading);
     }
 
     private updateContent(state: FinanceState): void {
-        if (!this.contentEl) return;
+        if (isDevMode()) {
+            diag("[FinanceWidget] updateContent() start, state:", state.status, "contentEl:", !!this.contentEl);
+        }
+        if (!this.contentEl) {
+            if (isDevMode()) {
+                diag("[FinanceWidget] updateContent() - NO contentEl!");
+            }
+            return;
+        }
 
         // Update body refresh button state
         this.updateBodyRefreshButton(state.status);
 
         switch (state.status) {
             case "idle":
+                if (isDevMode()) diag("[FinanceWidget] updateContent() - rendering IDLE");
                 this.renderIdle();
                 break;
             case "loading":
+                if (isDevMode()) diag("[FinanceWidget] updateContent() - rendering LOADING");
                 // Preserve existing content during refreshes
                 // Only show loading state on initial load
                 if (this.displayedTxIds.length === 0 && !this.txContainerEl) {
+                    if (isDevMode()) diag("[FinanceWidget] updateContent() - initial load, showing loading");
                     this.renderLoading();
+                } else if (isDevMode()) {
+                    diag("[FinanceWidget] updateContent() - refresh, preserving content, displayedTxIds:", this.displayedTxIds.length, "txContainerEl:", !!this.txContainerEl);
                 }
                 break;
             case "loaded":
+                if (isDevMode()) diag("[FinanceWidget] updateContent() - rendering LOADED, data:", !!state.data, "list length:", state.data?.list?.length);
                 this.renderLoaded(state);
                 break;
             case "error":
+                if (isDevMode()) diag("[FinanceWidget] updateContent() - rendering ERROR:", state.error);
                 this.renderError(state);
                 break;
+        }
+        if (isDevMode()) {
+            diag("[FinanceWidget] updateContent() end, contentEl children:", this.contentEl.childElementCount);
         }
     }
 
     private renderIdle(): void {
+        if (isDevMode()) diag("[FinanceWidget] renderIdle()");
         if (!this.contentEl) return;
         this.contentEl.innerHTML = "";
         this.resetTxState();
@@ -447,6 +499,7 @@ export class FinanceWidget extends CompanionWindow {
     }
 
     private renderLoading(): void {
+        if (isDevMode()) diag("[FinanceWidget] renderLoading()");
         if (!this.contentEl) return;
         this.contentEl.innerHTML = "";
         this.resetTxState();
@@ -455,28 +508,38 @@ export class FinanceWidget extends CompanionWindow {
     }
 
     private renderLoaded(state: FinanceState): void {
+        if (isDevMode()) diag("[FinanceWidget] renderLoaded() start");
         if (!this.contentEl) return;
 
         const def = FinanceShift.getDefinition(state.shift);
         const allTransactions = state.data?.list ?? [];
+
+        if (isDevMode()) diag("[FinanceWidget] renderLoaded() - allTransactions:", allTransactions.length);
 
         const { filtered, isWaiting } = FinanceShift.filterByShiftSmart(
             allTransactions,
             state.shift
         );
 
+        if (isDevMode()) diag("[FinanceWidget] renderLoaded() - filtered:", filtered.length, "isWaiting:", isWaiting);
+
         const filteredSum = filtered.reduce((acc, tx) => acc + tx.sum, 0);
 
         // Check if structural rebuild is needed
         const needsRebuild = this.needsFullRebuild(state.shift, isWaiting, filtered.length);
 
+        if (isDevMode()) diag("[FinanceWidget] renderLoaded() - needsRebuild:", needsRebuild);
+
         if (needsRebuild) {
+            if (isDevMode()) diag("[FinanceWidget] renderLoaded() - calling fullRebuild");
             this.fullRebuild(state.shift, isWaiting, filtered, filteredSum, def);
         } else {
+            if (isDevMode()) diag("[FinanceWidget] renderLoaded() - calling incrementalUpdate");
             this.incrementalUpdate(filtered, filteredSum);
         }
 
         this.recordStructuralState(state.shift, isWaiting, filtered.length);
+        if (isDevMode()) diag("[FinanceWidget] renderLoaded() end");
     }
 
     /** Full rebuild of the entire content area. */
@@ -487,6 +550,7 @@ export class FinanceWidget extends CompanionWindow {
         filteredSum: number,
         def: ReturnType<typeof FinanceShift.getDefinition>
     ): void {
+        if (isDevMode()) diag("[FinanceWidget] fullRebuild() start, isWaiting:", isWaiting, "filtered:", filtered.length);
         if (!this.contentEl) return;
 
         this.contentEl.innerHTML = "";
@@ -553,6 +617,7 @@ export class FinanceWidget extends CompanionWindow {
             this.contentEl.appendChild(divider2);
             const waitingMsg = this.createMessage(`Waiting for Night shift (${def.timeDisplay}).`);
             this.contentEl.appendChild(waitingMsg);
+            if (isDevMode()) diag("[FinanceWidget] fullRebuild() - isWaiting, returning early");
             return;
         }
 
@@ -592,17 +657,23 @@ export class FinanceWidget extends CompanionWindow {
             this.contentEl.appendChild(txContainer);
             this.txContainerEl = txContainer;
         }
+        if (isDevMode()) diag("[FinanceWidget] fullRebuild() end, contentEl children:", this.contentEl.childElementCount);
     }
 
     /** Incremental update: reuse rows, preserve order, highlight new. */
     private incrementalUpdate(filtered: FinanceTransaction[], filteredSum: number): void {
+        if (isDevMode()) diag("[FinanceWidget] incrementalUpdate() start, filtered:", filtered.length, "txContainerEl:", !!this.txContainerEl);
         // Update credits value
         this.updateCreditsValue(filteredSum);
 
         // Update transaction rows if container exists
         if (this.txContainerEl && filtered.length > 0) {
+            if (isDevMode()) diag("[FinanceWidget] incrementalUpdate() - calling updateTxRows");
             this.updateTxRows(filtered);
+        } else if (isDevMode()) {
+            diag("[FinanceWidget] incrementalUpdate() - SKIPPED, txContainerEl:", !!this.txContainerEl, "filtered.length:", filtered.length);
         }
+        if (isDevMode()) diag("[FinanceWidget] incrementalUpdate() end");
     }
 
     /** Update the credits value without rebuilding the entire section. */
@@ -616,7 +687,8 @@ export class FinanceWidget extends CompanionWindow {
         }
     }
 
-    private renderError(state: FinanceState): void {
+private renderError(state: FinanceState): void {
+        if (isDevMode()) diag("[FinanceWidget] renderError() start, error:", state.error);
         if (!this.contentEl) return;
         this.contentEl.innerHTML = "";
         this.resetTxState();
@@ -625,7 +697,8 @@ export class FinanceWidget extends CompanionWindow {
         errorEl.className = `${this.classPrefix}-error`;
         errorEl.textContent = state.error ?? "Unknown error";
 
-        this.contentEl.appendChild(errorEl);
+this.contentEl.appendChild(errorEl);
+        if (isDevMode()) diag("[FinanceWidget] renderError() end");
     }
 
     /** Reset transaction rendering state. */
@@ -645,6 +718,8 @@ export class FinanceWidget extends CompanionWindow {
     private createTransactionRow(tx: FinanceTransaction): HTMLDivElement {
         const row = document.createElement("div");
         row.className = `${this.classPrefix}-tx-row`;
+        const id = txIdentity(tx);
+        row.dataset.txId = id;
 
         const timeStr = FinanceShift.formatTime(tx.date);
 
@@ -652,6 +727,11 @@ export class FinanceWidget extends CompanionWindow {
         row.appendChild(this.createTxCell(tx.operation, true));
         row.appendChild(this.createTxCell(String(tx.userID)));
         row.appendChild(this.createTxCell(tx.sum.toLocaleString(), false, true));
+
+        row.addEventListener("click", () => {
+            if (this.destroyed) return;
+            this.controller.markTxViewed(id);
+        });
 
         return row;
     }
@@ -685,6 +765,7 @@ export class FinanceWidget extends CompanionWindow {
     }
 
     private onBodyRefreshClick = (): void => {
+        if (isDevMode()) diag("[FinanceWidget] onBodyRefreshClick()");
         if (this.destroyed) return;
         this.controller.refresh();
     };
@@ -694,25 +775,10 @@ export class FinanceWidget extends CompanionWindow {
         this.bodyRefreshBtn.disabled = status === "loading";
     }
 
-    private onShiftToggle = (): void => {
-        if (this.destroyed || !this.shiftDropdown) return;
-        const isVisible = this.shiftDropdown.classList.contains("open");
-        if (isVisible) {
-            this.shiftDropdown.classList.remove("open");
-        } else {
-            this.shiftDropdown.classList.add("open");
-        }
-    };
-
-    private onShiftSelect = (event: Event): void => {
+    private onHeaderRefreshClick = (): void => {
+        if (isDevMode()) diag("[FinanceWidget] onHeaderRefreshClick()");
         if (this.destroyed) return;
-        const target = event.currentTarget as HTMLElement;
-        const shift = target.dataset.shift as ShiftType | undefined;
-        if (shift && (shift === "morning" || shift === "day" || shift === "night")) {
-            this.controller.setShift(shift);
-            if (this.shiftDropdown) {
-                this.shiftDropdown.classList.remove("open");
-            }
-        }
+        if (this.controller.isLoading) return;
+        this.controller.refresh();
     };
 }

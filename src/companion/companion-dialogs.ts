@@ -80,6 +80,76 @@ export function showConfirm(msgHtml: string): Promise<boolean> {
     });
 }
 
+/** Result of the import snippets modal. */
+export interface ImportSnippetsResult {
+    /** Parsed snippets (one per non-empty line, trimmed). */
+    snippets: string[];
+    /** Target collection: "icebreaker" or "broadcast". */
+    target: "icebreaker" | "broadcast";
+}
+
+/** Show a modal for importing snippets from pasted text. */
+export function showImportSnippetsModal(): Promise<ImportSnippetsResult | null> {
+    return new Promise((resolve) => {
+        const overlay = createDialogOverlay();
+        overlay.innerHTML = `
+            <div class="ab-modal medium">
+                <div class="ab-header">
+                    <h2>Import Snippets</h2>
+                </div>
+                <div class="ab-content" style="gap: 12px; padding: 20px;">
+                    <div class="ab-import-buttons">
+                        <button class="ab-btn ab-btn-import icebreaker" id="ab-import-icebreaker">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25"/><line x1="6" y1="20" x2="6.01" y2="20"/></svg>
+                            Import to IceBreaker
+                        </button>
+                        <button class="ab-btn ab-btn-import broadcast" id="ab-import-broadcast">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                            Import to Broadcast
+                        </button>
+                    </div>
+                    <label style="display:block; margin-bottom:6px; font-size:12px; color:var(--ab-text-dim); font-weight:500;">
+                        Paste snippets (one per line):
+                    </label>
+                    <textarea class="ab-import-textarea" id="ab-import-textarea" 
+                        placeholder="Snippet 1
+Snippet 2
+Snippet 3
+..."></textarea>
+                    <button class="ab-btn ab-btn-cancel" id="ab-import-cancel">Cancel</button>
+                </div>
+            </div>
+        `;
+
+        const textarea = document.getElementById("ab-import-textarea") as HTMLTextAreaElement;
+        textarea.focus();
+
+        const parseSnippets = (): string[] => {
+            return textarea.value
+                .split(/\r?\n/)
+                .map(l => l.trim())
+                .filter(l => l.length > 0);
+        };
+
+        document.getElementById("ab-import-cancel")!.onclick = () => {
+            closeDialogOverlay(overlay);
+            resolve(null);
+        };
+
+        document.getElementById("ab-import-icebreaker")!.onclick = () => {
+            const snippets = parseSnippets();
+            closeDialogOverlay(overlay);
+            resolve({ snippets, target: "icebreaker" });
+        };
+
+        document.getElementById("ab-import-broadcast")!.onclick = () => {
+            const snippets = parseSnippets();
+            closeDialogOverlay(overlay);
+            resolve({ snippets, target: "broadcast" });
+        };
+    });
+}
+
 /** Show a delay input modal for private/broadcast delays. */
 export function showDelayModal(initialDelays?: { priv: number; broad: number }): Promise<{ priv: number; broad: number } | null> {
     return new Promise((resolve) => {

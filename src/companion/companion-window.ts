@@ -54,6 +54,7 @@ const COLLAPSED_HEIGHT = 44;
 
 import { StorageService } from "./storage-service";
 import { STORAGE_KEYS } from "./storage-keys";
+import { diag, isDevMode } from "./dev";
 
 // ---------------------------------------------------------------------------
 // Persistence helpers
@@ -192,15 +193,18 @@ export abstract class CompanionWindow {
 
     /** Show the widget (after close). */
     show(): void {
+        if (isDevMode()) diag("[CompanionWindow] show() start, destroyed:", this.destroyed, "root:", !!this.root);
         if (this.destroyed || !this.root) return;
         this.win = { ...this.win, hidden: false };
         this.root.style.display = "";
         this.installKeyboardListener();
         this.persistState();
+        if (isDevMode()) diag("[CompanionWindow] show() end");
     }
 
     /** Hide the widget (close). */
     hide(): void {
+        if (isDevMode()) diag("[CompanionWindow] hide() start, destroyed:", this.destroyed, "root:", !!this.root);
         if (this.destroyed || !this.root) return;
         this.cancelDrag();
         this.cancelResize();
@@ -208,6 +212,7 @@ export abstract class CompanionWindow {
         this.root.style.display = "none";
         this.removeKeyboardListener();
         this.persistState();
+        if (isDevMode()) diag("[CompanionWindow] hide() end");
     }
 
     /** Check if widget is visible. */
@@ -226,7 +231,11 @@ export abstract class CompanionWindow {
 
     /** Expand the widget. Restores exact previous dimensions from state. */
     expand(): void {
-        if (!this.win.collapsed || !this.root || !this.contentEl) return;
+        if (isDevMode()) diag("[CompanionWindow] expand() start, collapsed:", this.win.collapsed, "root:", !!this.root, "contentEl:", !!this.contentEl);
+        if (!this.win.collapsed || !this.root || !this.contentEl) {
+            if (isDevMode()) diag("[CompanionWindow] expand() - EARLY RETURN, collapsed:", this.win.collapsed, "root:", !!this.root, "contentEl:", !!this.contentEl);
+            return;
+        }
 
         // Restore body
         this.contentEl.style.display = "";
@@ -247,6 +256,7 @@ export abstract class CompanionWindow {
         this.root.classList.remove(`${this.classPrefix}-collapsed`);
         this.updateCollapseButton();
         this.persistState();
+        if (isDevMode()) diag("[CompanionWindow] expand() end");
     }
 
     /**
@@ -410,8 +420,16 @@ export abstract class CompanionWindow {
         const newX = this.dragOrigX + (e.clientX - this.dragStartX);
         const newY = this.dragOrigY + (e.clientY - this.dragStartY);
 
-        this.root.style.left = newX + "px";
-        this.root.style.top = newY + "px";
+        // Clamp to viewport so header and close button remain reachable
+        const rect = this.root.getBoundingClientRect();
+        const headerHeight = 44; // minimum header height (COLLAPSED_HEIGHT)
+        const maxX = window.innerWidth - headerHeight;
+        const maxY = window.innerHeight - headerHeight;
+        const clampedX = Math.max(0, Math.min(newX, maxX));
+        const clampedY = Math.max(0, Math.min(newY, maxY));
+
+        this.root.style.left = clampedX + "px";
+        this.root.style.top = clampedY + "px";
         this.root.style.bottom = "auto";
         this.root.style.right = "auto";
     };

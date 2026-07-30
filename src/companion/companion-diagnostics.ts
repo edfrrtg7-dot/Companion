@@ -17,6 +17,9 @@ import { STORAGE_VERSION, getStoredVersion } from "./storage-version";
 import { StorageService } from "./storage-service";
 import { STORAGE_KEYS } from "./storage-keys";
 import { diag, isDevMode } from "./dev";
+import { launcherDiagnostics } from "./launcher-diagnostics";
+import { getPlatform } from "./platform-interface";
+import { getRuntimeEnvironment } from "./runtime-environment";
 
 /** Diagnostics information structure. */
 export interface CompanionDiagnosticsInfo {
@@ -58,7 +61,7 @@ export function setRegisteredModules(names: string[]): void {
  * Detect the runtime environment.
  */
 function detectEnvironment(): "extension" | "userscript" | "unknown" {
-    if (typeof chrome !== "undefined" && chrome.runtime?.id) {
+    if (getRuntimeEnvironment().isExtension()) {
         return "extension";
     }
     if (typeof GM_info !== "undefined" || typeof Tampermonkey !== "undefined") {
@@ -71,14 +74,7 @@ function detectEnvironment(): "extension" | "userscript" | "unknown" {
  * Get the extension/package version.
  */
 function getVersion(): string {
-    try {
-        if (typeof chrome !== "undefined" && chrome.runtime?.getManifest) {
-            return chrome.runtime.getManifest().version;
-        }
-    } catch {
-        // Not in extension context
-    }
-    return "1.0.0";
+    return getRuntimeEnvironment().getExtensionVersion();
 }
 
 /**
@@ -92,10 +88,10 @@ export function collectDiagnostics(): CompanionDiagnosticsInfo {
         storageVersion: getStoredVersion(),
         environment: detectEnvironment(),
         runtime: {
-            isTopFrame: window === window.top,
-            isExtension: typeof chrome !== "undefined" && !!chrome.runtime?.id,
+            isTopFrame: getRuntimeEnvironment().isTopFrame(),
+            isExtension: getRuntimeEnvironment().isExtension(),
             devMode: isDevMode(),
-            readyState: document.readyState,
+            readyState: getRuntimeEnvironment().getReadyState(),
         },
     };
 }
@@ -130,6 +126,7 @@ export function exposeDiagnostics(): void {
         (window as any).__COMPANION_DIAGNOSTICS__ = {
             info: collectDiagnostics,
             log: logDiagnostics,
+            get launcher() { return launcherDiagnostics.getState(); },
         };
         diag("Diagnostics exposed at window.__COMPANION_DIAGNOSTICS__");
     } catch {

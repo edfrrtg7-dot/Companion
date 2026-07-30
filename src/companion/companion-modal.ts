@@ -10,12 +10,13 @@
  *   - Close on ESC, overlay click, or X button
  */
 
+import { renderDashboard, updateDashboard, start, stop } from "./dashboard";
 import { CrmService } from "./crm-service";
-import { renderDashboard, start, stop } from "./dashboard";
 import { diag } from "./dev";
-import { showAlert, showConfirm, showDelayModal } from "./companion-dialogs";
+import { showAlert, showConfirm, showDelayModal, showImportSnippetsModal } from "./companion-dialogs";
 import { injectStyles } from "./companion-styles";
 import { COMPANION_LOGO_DATA_URI } from "./brand-logo";
+import { getSessionMemory } from "./session-memory";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -54,8 +55,8 @@ function renderActionsSection(container: HTMLElement, onFinanceClick: () => void
         CrmService.writeProfile(key, data);
         const resetDuration = Date.now() - resetStart;
         try { localStorage.setItem("ab-last-reset", JSON.stringify({ timestamp: new Date().toISOString(), type: "resetIceBreaker", profileKey: key, durationMs: resetDuration })); } catch { /* ignore */ }
-        await showAlert("IceBreaker reset successfully. Reloading...");
-        window.location.reload();
+        updateDashboard();
+        await showAlert("IceBreaker reset successfully.");
     });
     row1.appendChild(resetBtn);
 
@@ -72,8 +73,8 @@ function renderActionsSection(container: HTMLElement, onFinanceClick: () => void
         }
         CrmService.newShift(data);
         CrmService.writeProfile(key, data);
-        await showAlert("New Shift started. Reloading...");
-        window.location.reload();
+        updateDashboard();
+        await showAlert("New Shift started.");
     });
     row1.appendChild(newShiftBtn);
 
@@ -110,52 +111,23 @@ function renderActionsSection(container: HTMLElement, onFinanceClick: () => void
     });
     row2.appendChild(delaysBtn);
 
-    // Import Snippets (hidden file input)
-    const fileInput = document.createElement("input");
-    fileInput.type = "file";
-    fileInput.accept = ".txt";
-    fileInput.style.display = "none";
-    fileInput.id = "ab-file-import";
-    fileInput.addEventListener("change", async () => {
-        const file = fileInput.files?.[0];
-        if (!file) return;
-        const key = CrmService.findProfileKey();
-        if (!key) { await showAlert("No CRM profile found."); return; }
-        const data = CrmService.readProfile(key);
-        if (!data || !CrmService.validateProfile(data)) { await showAlert("Invalid profile structure."); return; }
-        const text = await file.text();
-        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-        let importedCount = 0;
-        if ((data as any).messages) {
-            const msgs = (data as any).messages;
-            const existing = new Set(Object.values(msgs).flatMap((m: any) => m.text ? [m.text] : []));
-            for (const line of lines) {
-                if (!existing.has(line)) {
-                    const id = `snip_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-                    msgs[id] = { text: line, intervalSeconds: 60 };
-                    existing.add(line);
-                    importedCount++;
-                }
-            }
-        }
-        CrmService.writeProfile(key, data);
-        const profileKey = key.replace("chat-sender-", "");
-        const { addImportHistory } = await import("./dev");
-        addImportHistory({
-            timestamp: new Date().toISOString(),
-            profileKey,
-            importedCount,
-            result: importedCount > 0 ? "success" : "partial",
-        });
-        await showAlert(importedCount > 0 ? `Imported ${importedCount} snippets.` : "No new snippets to import.");
-        fileInput.value = "";
-    });
-    container.appendChild(fileInput);
-
+    // Import Snippets - opens paste dialog
     const importBtn = document.createElement("button");
     importBtn.className = "ab-btn";
     importBtn.innerHTML = `<svg style="width:16px;height:16px;fill:currentColor" viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg> Import Snippets`;
-    importBtn.addEventListener("click", () => fileInput.click());
+    importBtn.addEventListener("click", async () => {
+        const result = await showImportSnippetsModal();
+        if (!result) return;
+
+        const { snippets, target } = result;
+        const importResult = CrmService.importSnippetsToProfile(target, snippets);
+        if (importResult.importedCount > 0) {
+            updateDashboard();
+            await showAlert(importResult.message);
+        } else {
+            await showAlert(importResult.message);
+        }
+    });
     row2.appendChild(importBtn);
 
     container.appendChild(row2);
@@ -167,6 +139,79 @@ function renderFinanceSection(container: HTMLElement, onFinanceClick: () => void
     financeBtn.innerHTML = `<svg style="width:16px;height:16px;fill:currentColor" viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg> Finance Widget`;
     financeBtn.addEventListener("click", onFinanceClick);
     container.appendChild(financeBtn);
+}
+
+function renderSessionSection(container: HTMLElement): void {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "ab-session-search";
+    input.placeholder = "Search pages...";
+    container.appendChild(input);
+
+    const listEl = document.createElement("div");
+    listEl.className = "ab-session-list";
+    container.appendChild(listEl);
+
+    function formatTime(ts: number): string {
+        const diff = Date.now() - ts;
+        if (diff < 60000) return "just now";
+        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+        return `${Math.floor(diff / 3600000)}h ago`;
+    }
+
+    function highlight(text: string, query: string): string {
+        if (!query) return text;
+        const idx = text.toLowerCase().indexOf(query.toLowerCase());
+        if (idx === -1) return text;
+        const before = text.slice(0, idx);
+        const match = text.slice(idx, idx + query.length);
+        const after = text.slice(idx + query.length);
+        return `${before}<mark class="ab-session-highlight">${match}</mark>${after}`;
+    }
+
+    function renderList(query: string): void {
+        const events = getSessionMemory().getEvents();
+        const lower = query.toLowerCase().trim();
+        const filtered = lower
+            ? events.filter(e => e.title.toLowerCase().includes(lower) || e.url.toLowerCase().includes(lower))
+            : events;
+
+        listEl.innerHTML = "";
+
+        if (filtered.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "ab-session-empty";
+            empty.textContent = lower ? "No matching pages." : "No pages visited yet.";
+            listEl.appendChild(empty);
+            return;
+        }
+
+        for (const event of filtered) {
+            const item = document.createElement("div");
+            item.className = "ab-session-item";
+
+            const title = document.createElement("span");
+            title.className = "ab-session-title";
+            if (lower) {
+                title.innerHTML = highlight(event.title, query);
+            } else {
+                title.textContent = event.title;
+            }
+            item.appendChild(title);
+
+            const time = document.createElement("span");
+            time.className = "ab-session-time";
+            time.textContent = formatTime(event.timestamp);
+            item.appendChild(time);
+
+            item.addEventListener("click", () => { window.location.href = event.url; });
+            item.style.cursor = "pointer";
+            listEl.appendChild(item);
+        }
+    }
+
+    renderList("");
+    input.addEventListener("input", () => renderList(input.value));
 }
 
 function createDivider(): HTMLDivElement {
@@ -261,6 +306,64 @@ function show(onFinanceClick: () => void): void {
         actionsSection.appendChild(actionsContent);
         content.appendChild(actionsSection);
 
+        // Session section
+        const sessionSection = document.createElement("div");
+        sessionSection.className = "ab-section";
+        const sessionHeader = document.createElement("div");
+        sessionHeader.className = "ab-section-header";
+        sessionHeader.appendChild(createSectionTitle("Session"));
+        const sessionActions = document.createElement("div");
+        sessionActions.className = "ab-section-actions";
+
+        const exportBtn = document.createElement("button");
+        exportBtn.className = "ab-btn ab-btn-sm";
+        exportBtn.title = "Export session to JSON file";
+        exportBtn.innerHTML = `<svg style="width:14px;height:14px;fill:currentColor" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg> Export`;
+        exportBtn.addEventListener("click", () => {
+            const json = getSessionMemory().exportToJson();
+            const blob = new Blob([json], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `companion-session-${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        });
+        sessionActions.appendChild(exportBtn);
+
+        const importBtn = document.createElement("button");
+        importBtn.className = "ab-btn ab-btn-sm";
+        importBtn.title = "Import session from JSON file";
+        importBtn.innerHTML = `<svg style="width:14px;height:14px;fill:currentColor" viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5z"/></svg> Import`;
+        const fileInput = document.createElement("input");
+        fileInput.type = "file";
+        fileInput.accept = ".json";
+        fileInput.style.display = "none";
+        fileInput.addEventListener("change", async (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (!file) return;
+            try {
+                const text = await file.text();
+                const count = getSessionMemory().importFromJson(text);
+                renderSessionSection(sessionContent);
+                await showAlert(`Imported ${count} session entries.`);
+            } catch {
+                await showAlert("Invalid session file.", true);
+            }
+            fileInput.value = "";
+        });
+        importBtn.addEventListener("click", () => fileInput.click());
+        sessionActions.appendChild(importBtn);
+        document.body.appendChild(fileInput);
+
+        sessionHeader.appendChild(sessionActions);
+        sessionSection.appendChild(sessionHeader);
+        const sessionContent = document.createElement("div");
+        sessionSection.appendChild(sessionContent);
+        content.appendChild(sessionSection);
+
         // Finance section
         const financeSection = document.createElement("div");
         financeSection.className = "ab-section";
@@ -272,6 +375,7 @@ function show(onFinanceClick: () => void): void {
         // Render content into sections
         renderDashboard(statusGrid);
         renderActionsSection(actionsContent, onFinanceClick);
+        renderSessionSection(sessionContent);
         renderFinanceSection(financeContent, onFinanceClick);
     }
 
@@ -315,9 +419,16 @@ export class CompanionModal {
     private onFinanceClick: (() => void) | null = null;
     private onVisibilityChange: (() => void) | null = null;
 
+    static initInstance(modal: CompanionModal): void {
+        if (CompanionModal.instance) {
+            throw new Error("CompanionModal instance already initialized.");
+        }
+        CompanionModal.instance = modal;
+    }
+
     static getInstance(): CompanionModal {
         if (!CompanionModal.instance) {
-            CompanionModal.instance = new CompanionModal();
+            throw new Error("CompanionModal not initialized. Call CompanionModal.initInstance() during bootstrap.");
         }
         return CompanionModal.instance;
     }

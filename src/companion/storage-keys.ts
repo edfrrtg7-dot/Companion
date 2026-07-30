@@ -35,6 +35,9 @@ export const STORAGE_KEYS = {
 
     /** Diagnostics import history. */
     DIAGNOSTICS_IMPORT_HISTORY: "ab-diag-import-history",
+
+    /** Session memory history (persistent between browser restarts). */
+    SESSION_MEMORY: "ab-session-memory",
 } as const;
 
 /** Type-safe key type. */

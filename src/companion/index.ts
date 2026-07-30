@@ -80,6 +80,10 @@ export type {
 export { FinanceWidget } from "./finance-widget";
 export type { FinanceWidgetConfig } from "./finance-widget";
 
+// FinanceModule — platform module integration
+export { FinanceModule } from "./finance-module";
+export type { FinanceSnapshot, FinanceDiff } from "./finance-module";
+
 // Brand assets
 export { COMPANION_LOGO_SVG, COMPANION_LOGO_DATA_URI } from "./brand-logo";
 export { BRAND_COLORS } from "./brand-colors";

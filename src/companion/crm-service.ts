@@ -242,18 +242,6 @@ export class CrmService {
         return status === "Running" || status === "Progress" || status === "Paused";
     }
 
-    private static detectDelayProperty(messages: Record<string, unknown>): string | null {
-        if (!messages || typeof messages !== "object") return null;
-        const items = Object.values(messages);
-        if (items.length === 0) return null;
-        const item = items[0];
-        if (item && typeof item === "object") {
-            const match = DELAY_PROPERTIES.find((p) => p in (item as object));
-            if (match) return match;
-        }
-        return null;
-    }
-
     private static applyPropertyUpdates(messages: Record<string, unknown> | undefined, delayValue: number): void {
         if (!messages || typeof messages !== "object") return;
         const property = CrmService.detectDelayProperty(messages);
@@ -279,5 +267,165 @@ export class CrmService {
             }
         } catch { /* ignore */ }
         return null;
+    }
+
+    /**
+     * Detect the text property name from existing messages.
+     * Returns "text" by default if not found.
+     */
+    private static detectTextProperty(messages: Record<string, unknown> | undefined): string {
+        if (!messages || typeof messages !== "object") return "text";
+        const items = Object.values(messages);
+        if (items.length === 0) return "text";
+        const first = items[0];
+        if (first && typeof first === "object") {
+            for (const key in first) {
+                if (typeof (first as any)[key] === "string" && key !== "intervalSeconds" && key !== "delay" && key !== "interval" && key !== "timeout" && key !== "seconds") {
+                    return key;
+                }
+            }
+        }
+        return "text";
+    }
+
+    /**
+     * Detect the delay property name from existing messages.
+     * Uses DELAY_PROPERTIES constant for known delay property names.
+     */
+    private static detectDelayProperty(messages: Record<string, unknown> | undefined): string | null {
+        if (!messages || typeof messages !== "object") return null;
+        const items = Object.values(messages);
+        if (items.length === 0) return null;
+        const first = items[0];
+        if (first && typeof first === "object") {
+            const match = DELAY_PROPERTIES.find((p) => p in (first as object));
+            if (match) return match;
+        }
+        return null;
+    }
+
+    /**
+     * Import snippets into a messages container using canonical message structure.
+     * - Detects text/delay properties from existing messages
+     * - Uses first existing message as template
+     * - Generates sequential numeric IDs (1, 2, 3...)
+     * - Sets first message delay to 0, subsequent to detected delay value
+     * @param messages - The messages object to import into (IceBreaker or Broadcast)
+     * @param snippets - Array of snippet texts to import
+     * @returns Number of snippets actually imported (after deduplication)
+     */
+    static importSnippets(messages: Record<string, unknown>, snippets: string[]): number {
+        if (!messages || typeof messages !== "object") return 0;
+
+        const existingTexts = new Set<string>();
+        for (const msg of Object.values(messages)) {
+            if (msg && typeof msg === "object") {
+                const textProp = Object.keys(msg).find(k => typeof (msg as any)[k] === "string" && k !== "intervalSeconds" && k !== "delay" && k !== "interval" && k !== "timeout" && k !== "seconds");
+                if (textProp && (msg as any)[textProp]) {
+                    existingTexts.add((msg as any)[textProp]);
+                }
+            }
+        }
+
+        // Detect properties from existing messages
+        const textProp = CrmService.detectTextProperty(messages);
+        const delayProp = CrmService.detectDelayProperty(messages) ?? "intervalSeconds";
+
+        // Get template from first existing message
+        const template = Object.values(messages)[0] as Record<string, unknown> | undefined;
+
+        // Determine next sequential ID
+        let nextId = 1;
+        for (const key of Object.keys(messages)) {
+            const num = parseInt(key, 10);
+            if (!isNaN(num) && num >= nextId) {
+                nextId = num + 1;
+            }
+        }
+
+        // Determine delay value (first non-zero delay from existing, or 60 default)
+        let delayValue = 60;
+        if (template && typeof template === "object" && delayProp in template) {
+            const templateDelay = template[delayProp];
+            if (typeof templateDelay === "number" && templateDelay > 0) {
+                delayValue = templateDelay;
+            }
+        }
+
+        let importedCount = 0;
+        for (const snippet of snippets) {
+            if (!existingTexts.has(snippet)) {
+                const id = String(nextId++);
+                const newMsg: Record<string, unknown> = template ? { ...template } : {};
+                newMsg[textProp] = snippet;
+                newMsg[delayProp] = importedCount === 0 ? 0 : delayValue;
+                messages[id] = newMsg;
+                existingTexts.add(snippet);
+                importedCount++;
+            }
+        }
+        return importedCount;
+    }
+
+    /**
+     * Import snippets into a profile (IceBreaker or Broadcast).
+     * Handles profile lookup, validation, storage update, and history logging.
+     * @param target - "icebreaker" or "broadcast"
+     * @param snippets - Array of snippet texts to import
+     * @returns Result object with importedCount and message
+     */
+    static importSnippetsToProfile(target: "icebreaker" | "broadcast", snippets: string[]): { importedCount: number; message: string } {
+        if (snippets.length === 0) {
+            return { importedCount: 0, message: "No valid snippets to import." };
+        }
+
+        const key = CrmService.findProfileKey();
+        if (!key) {
+            return { importedCount: 0, message: "No CRM profile found." };
+        }
+
+        const data = CrmService.readProfile(key);
+        if (!data || !CrmService.validateProfile(data)) {
+            return { importedCount: 0, message: "Invalid profile structure." };
+        }
+
+        let importedCount = 0;
+        const profileData = data as any;
+
+        if (target === "icebreaker") {
+            if (!profileData.messages || typeof profileData.messages !== "object") {
+                profileData.messages = {};
+            }
+            importedCount = CrmService.importSnippets(profileData.messages, snippets);
+        } else if (target === "broadcast") {
+            if (!profileData.broadcast || typeof profileData.broadcast !== "object") {
+                profileData.broadcast = {};
+            }
+            if (!profileData.broadcast.messages || typeof profileData.broadcast.messages !== "object") {
+                profileData.broadcast.messages = {};
+            }
+            importedCount = CrmService.importSnippets(profileData.broadcast.messages, snippets);
+        } else {
+            return { importedCount: 0, message: "Target collection not found in profile." };
+        }
+
+        if (importedCount === 0) {
+            return { importedCount: 0, message: "No new snippets to import (all were duplicates)." };
+        }
+
+        CrmService.writeProfile(key, data);
+
+        const profileKey = key.replace("chat-sender-", "");
+        import("./dev").then(({ addImportHistory }) => {
+            addImportHistory({
+                timestamp: new Date().toISOString(),
+                profileKey,
+                importedCount,
+                result: "success",
+            });
+        }).catch(() => { /* ignore */ });
+
+        const targetName = target === "icebreaker" ? "IceBreaker" : "Broadcast";
+        return { importedCount, message: `Imported ${importedCount} snippets to ${targetName}.` };
     }
 }

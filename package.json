@@ -8,6 +8,7 @@
     "build": "cd agencybooster-devtoolkit && node build-finance.mjs",
     "build:ext": "cd agencybooster-devtoolkit && node build-extension-dev.mjs",
     "build:ext:prod": "cd agencybooster-devtoolkit && node build-extension-prod.mjs",
+    "build:arena": "cd agencybooster-devtoolkit && node build-arena.mjs",
     "build:icons": "cd agencybooster-devtoolkit && node generate-icons.mjs",
     "dev": "cd agencybooster-devtoolkit && node build-extension-dev.mjs",
     "lint": "eslint src/ extension/",

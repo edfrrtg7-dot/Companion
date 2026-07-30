@@ -11,7 +11,7 @@
  */
 
 import { FinanceApiClient, FinanceApiError, FinanceApiAbortError } from "./finance-api-client";
-import { FinanceMapper, FinanceResponse } from "./finance-mapper";
+import { FinanceMapper, FinanceResponse, type FinanceTransaction } from "./finance-mapper";
 import { FinanceShift, ShiftType } from "./finance-shift";
 
 // ---------------------------------------------------------------------------
@@ -26,6 +26,7 @@ export interface FinanceState {
     readonly from: Date;
     readonly to: Date;
     readonly shift: ShiftType;
+    readonly unviewedTransactions: number;
 }
 
 /** Finance controller status. */
@@ -47,6 +48,20 @@ export interface FinanceControllerConfig {
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a stable identity key for a transaction.
+ *
+ * Fallback identity — the API does not expose a stable transaction ID.
+ * Composed of: date.getTime() + ladyID + userID + operation + sum.
+ */
+export function txIdentity(tx: FinanceTransaction): string {
+    return `${tx.date.getTime()}_${tx.ladyID}_${tx.userID}_${tx.operation}_${tx.sum}`;
+}
+
+// ---------------------------------------------------------------------------
 // FinanceController
 // ---------------------------------------------------------------------------
 
@@ -56,6 +71,8 @@ export class FinanceController {
     private readonly client: FinanceApiClient;
     private readonly timeoutMs: number;
     private abortController: AbortController | null = null;
+    private unviewedTxIds: Set<string> = new Set();
+    private allSeenTxIds: Set<string> = new Set();
 
     constructor(config: FinanceControllerConfig = {}) {
         const shift = config.shift ?? FinanceShift.getSavedOrDetect();
@@ -68,6 +85,7 @@ export class FinanceController {
             from: range.from,
             to: range.to,
             shift,
+            unviewedTransactions: 0,
         };
 
         this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -148,7 +166,24 @@ export class FinanceController {
             }
 
             const mapped = FinanceMapper.mapResponse(raw);
-            this.setState({ status: "loaded", data: mapped, error: null });
+            const currentIds = new Set((mapped.list ?? []).map(tx => txIdentity(tx)));
+
+            // Prune unviewed IDs no longer in current data
+            for (const id of this.unviewedTxIds) {
+                if (!currentIds.has(id)) {
+                    this.unviewedTxIds.delete(id);
+                }
+            }
+
+            // Mark newly seen transactions as unviewed
+            for (const id of currentIds) {
+                if (!this.allSeenTxIds.has(id)) {
+                    this.unviewedTxIds.add(id);
+                }
+                this.allSeenTxIds.add(id);
+            }
+
+            this.setState({ status: "loaded", data: mapped, error: null, unviewedTransactions: this.unviewedTxIds.size });
         } catch (error: unknown) {
             if (controller.signal.aborted) {
                 return;
@@ -198,6 +233,18 @@ export class FinanceController {
     /** Check if a request is in progress. */
     get isLoading(): boolean {
         return this.state.status === "loading";
+    }
+
+    /** Mark a specific transaction as viewed by its identity key. */
+    markTxViewed(txId: string): void {
+        if (this.unviewedTxIds.delete(txId)) {
+            this.setState({ unviewedTransactions: this.unviewedTxIds.size });
+        }
+    }
+
+    /** Check if a transaction is unviewed by its identity key. */
+    isTxUnviewed(txId: string): boolean {
+        return this.unviewedTxIds.has(txId);
     }
 
     /** Subscribe to state changes. Returns an unsubscribe function. */

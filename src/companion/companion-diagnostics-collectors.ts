@@ -23,6 +23,8 @@ import { collectDiagnostics } from "./companion-diagnostics";
 import { FinanceController } from "./finance-controller";
 import { FinanceShift } from "./finance-shift";
 import { getErrorHistory, getImportHistory } from "./dev";
+import { getPlatform } from "./platform-interface";
+import { getRuntimeEnvironment } from "./runtime-environment";
 
 /**
  * FinanceController dependency — injected via setFinanceController().
@@ -33,7 +35,7 @@ let financeController: FinanceController | null = null;
 /**
  * Inject the FinanceController instance for Finance diagnostics.
  */
-function setFinanceController(controller: FinanceController | null): void {
+export function setFinanceController(controller: FinanceController | null): void {
     financeController = controller;
 }
 
@@ -350,24 +352,21 @@ function collectRuntimeMapData(): Record<string, string> {
 
     // Determine actual source of version at runtime
     const versionSource = (() => {
-        try {
-            if (typeof chrome !== "undefined" && chrome.runtime?.getManifest) {
-                return "chrome.runtime.getManifest()";
-            }
-        } catch { /* not available */ }
-        return "fallback (1.0.0)";
+        const v = getRuntimeEnvironment().getExtensionVersion();
+        if (v !== "0.0.0") return `getRuntimeEnvironment().getExtensionVersion() [${v}]`;
+        return "fallback (0.0.0)";
     })();
 
     // Determine actual source of environment at runtime
     const environmentSource = (() => {
-        if (typeof chrome !== "undefined" && chrome.runtime?.id) return "chrome.runtime.id (extension)";
+        if (getRuntimeEnvironment().isExtension()) return "getRuntimeEnvironment().isExtension() (extension)";
         if (typeof GM_info !== "undefined" || typeof Tampermonkey !== "undefined") return "GM_info (userscript)";
         return "fallback (unknown)";
     })();
 
     // Determine actual source of storage at runtime
     const storageSource = (() => {
-        if (typeof chrome !== "undefined" && chrome.storage?.local) return "chrome.storage.local";
+        if (getPlatform().chromeStorage) return "getPlatform().chromeStorage";
         return "localStorage";
     })();
 
@@ -376,7 +375,7 @@ function collectRuntimeMapData(): Record<string, string> {
         try {
             const hasDevFlag = StorageService.get(STORAGE_KEYS.DEV_MODE) !== null;
             if (hasDevFlag) return "localStorage[ab-dev] (active)";
-            if (typeof chrome !== "undefined" && chrome.storage?.local) return "chrome.storage.local[ab-dev] (inactive)";
+            if (getPlatform().chromeStorage) return "getPlatform().chromeStorage[ab-dev] (inactive)";
             return "localStorage[ab-dev] (inactive)";
         } catch {
             return "unavailable";
@@ -413,7 +412,7 @@ function collectRuntimeMapData(): Record<string, string> {
         "TopFrame | source": "window === window.top",
         "TopFrame | confidence": "HIGH",
         "Extension | value": info.runtime.isExtension ? "Yes" : "No",
-        "Extension | source": "chrome.runtime.id",
+        "Extension | source": "getRuntimeEnvironment().isExtension()",
         "Extension | confidence": "HIGH",
         "DevMode | value": info.runtime.devMode ? "Yes" : "No",
         "DevMode | source": devModeSource,
@@ -862,7 +861,6 @@ async function copyDebugBundle(): Promise<boolean> {
 }
 
 export {
-    setFinanceController,
     collectStorageData,
     collectRuntimeData,
     collectDomData,

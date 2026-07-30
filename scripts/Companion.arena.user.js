@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Companion
+// @name         Companion (Arena)
 // @namespace    http://tampermonkey.net/
 // @version      1.0.0
-// @description  Companion application — Finance module
+// @description  Companion application — Arena Runtime
 // @author       Senior Staff JavaScript Engineer
 // @match        https://goldenbride.net/*
 // @grant        none
@@ -396,52 +396,6 @@
   function setRuntimeEnvironment(runtime) {
     currentRuntime = runtime;
   }
-  var ChromeRuntimeEnvironment = class {
-    isExtension() {
-      return getPlatform().isExtension();
-    }
-    isTopFrame() {
-      try {
-        return window === window.top;
-      } catch {
-        return true;
-      }
-    }
-    getExtensionVersion() {
-      return getPlatform().getExtensionVersion();
-    }
-    getGlobal(key) {
-      try {
-        return window[key];
-      } catch {
-        return void 0;
-      }
-    }
-    setGlobal(key, value) {
-      try {
-        window[key] = value;
-      } catch {
-      }
-    }
-    getReadyState() {
-      try {
-        return document.readyState;
-      } catch {
-        return "complete";
-      }
-    }
-    onDomReady(callback) {
-      try {
-        if (document.readyState === "loading") {
-          document.addEventListener("DOMContentLoaded", callback);
-        } else {
-          queueMicrotask(callback);
-        }
-      } catch {
-        queueMicrotask(callback);
-      }
-    }
-  };
 
   // ../src/companion/global-state.ts
   var currentState;
@@ -6742,8 +6696,8 @@ Snippet 3
     );
   }
 
-  // ../src/companion/chrome-platform.ts
-  var ChromePlatform = class {
+  // ../src/companion/arena-platform.ts
+  var ArenaPlatform = class {
     constructor() {
       __publicField(this, "localStorage", {
         getItem(key) {
@@ -6772,43 +6726,10 @@ Snippet 3
           }
         }
       });
-      __publicField(this, "chromeStorage", (() => {
-        try {
-          if (typeof chrome !== "undefined" && chrome.storage?.local) {
-            return {
-              getAll() {
-                return chrome.storage.local.get(null).then((all) => {
-                  const result = {};
-                  for (const [key, value] of Object.entries(all)) {
-                    if (typeof value === "string") {
-                      result[key] = value;
-                    }
-                  }
-                  return result;
-                });
-              },
-              set(key, value) {
-                return chrome.storage.local.set({ [key]: value });
-              },
-              remove(key) {
-                return chrome.storage.local.remove(key);
-              },
-              clear() {
-                return chrome.storage.local.clear();
-              }
-            };
-          }
-        } catch {
-        }
-        return null;
-      })());
+      __publicField(this, "chromeStorage", null);
     }
     isExtension() {
-      try {
-        return typeof chrome !== "undefined" && !!chrome.runtime?.id;
-      } catch {
-        return false;
-      }
+      return false;
     }
     isTopFrame() {
       try {
@@ -6818,12 +6739,6 @@ Snippet 3
       }
     }
     getExtensionVersion() {
-      try {
-        if (typeof chrome !== "undefined" && chrome.runtime?.getManifest) {
-          return chrome.runtime.getManifest().version;
-        }
-      } catch {
-      }
       return "0.0.0";
     }
     getGlobal(key) {
@@ -6859,10 +6774,58 @@ Snippet 3
     }
   };
 
-  // ../src/companion/bootstrap.ts
+  // ../src/companion/arena-runtime-environment.ts
+  var ArenaRuntimeEnvironment = class {
+    isExtension() {
+      return false;
+    }
+    isTopFrame() {
+      try {
+        return window === window.top;
+      } catch {
+        return true;
+      }
+    }
+    getExtensionVersion() {
+      return "0.0.0";
+    }
+    getGlobal(key) {
+      try {
+        return window[key];
+      } catch {
+        return void 0;
+      }
+    }
+    setGlobal(key, value) {
+      try {
+        window[key] = value;
+      } catch {
+      }
+    }
+    getReadyState() {
+      try {
+        return document.readyState;
+      } catch {
+        return "complete";
+      }
+    }
+    onDomReady(callback) {
+      try {
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", callback);
+        } else {
+          queueMicrotask(callback);
+        }
+      } catch {
+        queueMicrotask(callback);
+      }
+    }
+  };
+
+  // ../src/companion/arena-bootstrap.ts
   var coordinator = createComposition(
-    new ChromePlatform(),
-    new ChromeRuntimeEnvironment(),
+    new ArenaPlatform(),
+    new ArenaRuntimeEnvironment(),
     new ChromeGlobalState()
   );
   function bootstrap() {
