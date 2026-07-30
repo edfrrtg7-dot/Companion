@@ -184,3 +184,11 @@ The Baseline is one of several architectural documents, each with a distinct res
 - **Review Process** describes how EPICs are reviewed and accepted. The Baseline records the results of that process.
 
 In summary: the Baseline is the record of accepted architectural state. It is neither a plan, a rationale, nor a procedure.
+
+---
+
+## Navigation
+
+- **Previous:** [Internal Infrastructure](05_INTERNAL_INFRASTRUCTURE.md)
+- **Next:** [Roadmap](07_ROADMAP.md)
+- **Related:** [INDEX.md](INDEX.md) | [Architecture Decisions](08_ARCHITECTURE_DECISIONS.md) | [README.md](README.md)

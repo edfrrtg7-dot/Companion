@@ -102,3 +102,11 @@ A proposed change to the AI Rules is submitted as a documentation update. It is 
 Accepted changes become part of the project's permanent engineering guidance. Previous versions are retained for historical traceability.
 
 AI agent behaviour that consistently violates these rules is treated as a defect in either the rules themselves (if they are unclear or incomplete) or the agent's implementation (if it fails to follow clear rules). In either case, the appropriate fix is documented and applied.
+
+---
+
+## Navigation
+
+- **Previous:** [Architecture Decisions](08_ARCHITECTURE_DECISIONS.md)
+- **Next:** [Review Process](10_REVIEW_PROCESS.md)
+- **Related:** [INDEX.md](INDEX.md) | [README.md](README.md)

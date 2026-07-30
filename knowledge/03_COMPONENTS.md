@@ -182,3 +182,11 @@ Depends on the module it belongs to. Depends on the browser DOM and the CRM page
 - UI components can be redesigned without affecting module logic, as long as they respect the module's controller contract.
 - Modules may replace their UI entirely without coordination with other modules.
 - UI components may be added or removed as modules evolve.
+
+---
+
+## Navigation
+
+- **Previous:** [Architecture](02_ARCHITECTURE.md)
+- **Next:** [Public APIs](04_PUBLIC_APIS.md)
+- **Related:** [INDEX.md](INDEX.md) | [README.md](README.md)

@@ -74,3 +74,11 @@ The review process itself is governed by the same procedures that govern archite
 - Reviews ensure the process aligns with the Engineering Philosophy and Architecture Decisions.
 - Accepted changes become part of the permanent engineering guidance via Baseline promotion (see [`knowledge/06_BASELINE.md`](06_BASELINE.md)).
 - Historical versions of the process are retained for reference.
+
+---
+
+## Navigation
+
+- **Previous:** [AI Rules](09_AI_RULES.md)
+- **Next:** [Glossary](11_GLOSSARY.md)
+- **Related:** [INDEX.md](INDEX.md) | [Baseline](06_BASELINE.md) | [README.md](README.md)

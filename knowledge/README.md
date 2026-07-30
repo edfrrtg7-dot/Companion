@@ -95,8 +95,64 @@ Invalid transitions:
 
 ---
 
+## Canonical Reading Order
+
+The Knowledge Base is designed to be read sequentially. Start with 00 and proceed through 11 for a complete understanding of the platform.
+
+| Order | Document | Prerequisites |
+|-------|----------|---------------|
+| 1 | [00_PROJECT_OVERVIEW.md](00_PROJECT_OVERVIEW.md) | None |
+| 2 | [01_ENGINEERING_PHILOSOPHY.md](01_ENGINEERING_PHILOSOPHY.md) | 00 |
+| 3 | [02_ARCHITECTURE.md](02_ARCHITECTURE.md) | 01 |
+| 4 | [03_COMPONENTS.md](03_COMPONENTS.md) | 02 |
+| 5 | [04_PUBLIC_APIS.md](04_PUBLIC_APIS.md) | 03 |
+| 6 | [05_INTERNAL_INFRASTRUCTURE.md](05_INTERNAL_INFRASTRUCTURE.md) | 04 |
+| 7 | [06_BASELINE.md](06_BASELINE.md) | 05 |
+| 8 | [07_ROADMAP.md](07_ROADMAP.md) | 06 |
+| 9 | [08_ARCHITECTURE_DECISIONS.md](08_ARCHITECTURE_DECISIONS.md) | 06 |
+| 10 | [09_AI_RULES.md](09_AI_RULES.md) | 01 |
+| 11 | [10_REVIEW_PROCESS.md](10_REVIEW_PROCESS.md) | 09 |
+| 12 | [11_GLOSSARY.md](11_GLOSSARY.md) | Any |
+
+For alternative reading paths by role, see [INDEX.md](INDEX.md#reader-profiles).
+
+---
+
+## Reader Profiles
+
+### New Contributors
+
+Read 00 → 01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 10 → 11 in order.
+
+### Maintainers
+
+Read 00 → 01 → 02 → 03 → 06 → 08. Reference other documents as needed.
+
+### Reviewers
+
+Read 10 → 06 → 09 → 08. Reference specific documents relevant to the submission.
+
+### AI Implementation Agents
+
+Start with AGENTS.md, then follow the full canonical reading order, then consult the current EPIC.
+
+---
+
+## Navigation Model
+
+Every Knowledge Base document SHOULD include a `## Navigation` section at the end with:
+
+- **Previous** — the document that precedes this one in the reading order.
+- **Next** — the document that follows this one in the reading order.
+- **Related** — other documents that are relevant but not directly sequential.
+
+The navigation section provides deterministic forward and backward traversal through the Knowledge Base.
+
+---
+
 ## Cross-References
 
 - [ADR README](../docs/adr/README.md) — ADR lifecycle and status conventions.
 - [Review Process](10_REVIEW_PROCESS.md) — How documents transition from Proposed to Accepted.
 - [Baseline](06_BASELINE.md) — Accepted documents form the project baseline.
+- [INDEX.md](INDEX.md) — Central navigation hub with canonical reading order and reader profiles.

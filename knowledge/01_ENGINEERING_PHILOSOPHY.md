@@ -109,3 +109,11 @@ When a decision conflicts with an accepted baseline, the baseline takes preceden
 When evidence is unavailable, the decision is deferred or marked as explicitly uncertain. Assumptions are documented so they can be validated later.
 
 Every significant decision should be traceable to its supporting evidence or accepted specification. Decisions made without evidence are explicitly labelled as provisional.
+
+---
+
+## Navigation
+
+- **Previous:** [Project Overview](00_PROJECT_OVERVIEW.md)
+- **Next:** [Architecture](02_ARCHITECTURE.md)
+- **Related:** [INDEX.md](INDEX.md) | [README.md](README.md)

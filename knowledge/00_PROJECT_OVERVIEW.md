@@ -98,3 +98,11 @@ The remaining Knowledge Base documents build on this overview in a logical seque
 - **[11_GLOSSARY.md](11_GLOSSARY.md)** — Terminology and definitions used throughout the project.
 
 Each document is self-contained but assumes familiarity with this overview.
+
+---
+
+## Navigation
+
+- **Previous:** (this is the entry point)
+- **Next:** [Engineering Philosophy](01_ENGINEERING_PHILOSOPHY.md)
+- **Related:** [INDEX.md](INDEX.md) | [README.md](README.md)

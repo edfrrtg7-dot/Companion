@@ -103,3 +103,11 @@ The relationship follows these rules:
 - Internal infrastructure never exposes its interfaces as public contracts. If a module needs a capability, a public API is created for it — the internal interface is never reused as the public one.
 
 This separation allows the platform to evolve its implementation without disrupting its consumers, and allows modules to depend on stable contracts without needing to track infrastructure changes.
+
+---
+
+## Navigation
+
+- **Previous:** [Public APIs](04_PUBLIC_APIS.md)
+- **Next:** [Baseline](06_BASELINE.md)
+- **Related:** [INDEX.md](INDEX.md) | [README.md](README.md)

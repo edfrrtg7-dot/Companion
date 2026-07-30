@@ -74,3 +74,11 @@ Terminology changes require coordinated updates across all documents that refere
 - **Review** – Subject to evaluation for conceptual accuracy, consistency with existing definitions, and alignment with the Principles.
 - **Acceptance** – Formal adoption occurs through documented approval, after which the revised definitions replace previous versions.
 - **Maintenance** – Updated definitions are versioned alongside the Knowledge Base, retaining historical records for traceability.
+
+---
+
+## Navigation
+
+- **Previous:** [Review Process](10_REVIEW_PROCESS.md)
+- **Next:** (this is the final document)
+- **Related:** [INDEX.md](INDEX.md) | [README.md](README.md)

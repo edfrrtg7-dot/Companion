@@ -88,3 +88,11 @@ A service registration belongs in the public API if modules need to consume it. 
 The lifecycle API belongs in the public API only to the extent that modules need to observe lifecycle events. Lifecycle control — ordering, sequencing, precondition enforcement — is infrastructure.
 
 Implementation details never cross the boundary. The public API defines what a module can do, never how the platform does it. Any type, function, or constant that exists only to support platform implementation is excluded from the public API.
+
+---
+
+## Navigation
+
+- **Previous:** [Components](03_COMPONENTS.md)
+- **Next:** [Internal Infrastructure](05_INTERNAL_INFRASTRUCTURE.md)
+- **Related:** [INDEX.md](INDEX.md) | [README.md](README.md)

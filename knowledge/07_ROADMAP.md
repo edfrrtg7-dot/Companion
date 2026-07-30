@@ -98,3 +98,11 @@ Roadmap items evolve through the following stages:
 - **Promotion into the Baseline.** An accepted EPIC that has been implemented becomes part of the Baseline. The Architecture Manifest and Architecture Revision are updated to reflect the new state.
 
 Roadmap governance is lightweight by design. The formal rigour is applied at the EPIC stage, where implementation commitments are made. Before that stage, the Roadmap is a communication and coordination tool, not a control mechanism.
+
+---
+
+## Navigation
+
+- **Previous:** [Baseline](06_BASELINE.md)
+- **Next:** [Architecture Decisions](08_ARCHITECTURE_DECISIONS.md)
+- **Related:** [INDEX.md](INDEX.md) | [README.md](README.md)

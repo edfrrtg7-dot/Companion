@@ -97,3 +97,11 @@ The platform architecture defines clear boundaries that prevent coupling and sco
 **Communication boundary.** Events are the only cross-module communication channel. Modules do not call each other's methods, share state, or depend on each other's types. Any interaction between modules must go through the event system.
 
 These boundaries are enforced at the architectural level. Violating a boundary is a design defect, regardless of whether the code compiles or runs correctly.
+
+---
+
+## Navigation
+
+- **Previous:** [Engineering Philosophy](01_ENGINEERING_PHILOSOPHY.md)
+- **Next:** [Components](03_COMPONENTS.md)
+- **Related:** [INDEX.md](INDEX.md) | [README.md](README.md)

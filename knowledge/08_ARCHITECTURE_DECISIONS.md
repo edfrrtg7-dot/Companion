@@ -101,3 +101,11 @@ Architectural decisions are governed through the following process:
 - **Historical retention.** No decision record is ever deleted. Even superseded and deprecated decisions remain in the document for historical traceability. Removing a decision record would erase the rationale that led to subsequent choices.
 
 The decision record is append-only. New decisions are added. Existing decisions are updated only to change their status or add links to superseding decisions. The content of the original decision is never modified after acceptance.
+
+---
+
+## Navigation
+
+- **Previous:** [Roadmap](07_ROADMAP.md)
+- **Next:** [AI Rules](09_AI_RULES.md)
+- **Related:** [INDEX.md](INDEX.md) | [Baseline](06_BASELINE.md) | [README.md](README.md)
