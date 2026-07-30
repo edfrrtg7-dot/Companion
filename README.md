@@ -122,6 +122,10 @@ See [Architecture](docs/architecture.md) and [AI Rules](docs/ai-rules.md).
 - Business logic never exists in UI classes
 - Every feature starts with documentation
 
+### Agent Onboarding
+
+New engineering agents should start at [AGENTS.md](AGENTS.md) and the [Bootstrap Guide](docs/bootstrap/README.md) for the required reading order, workflow, and evidence hierarchy.
+
 ## Roadmap
 
 | Version | Theme | Features |
