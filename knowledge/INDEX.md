@@ -8,20 +8,20 @@ Canonical navigation hub for Companion engineering documentation. Use this index
 
 The following sequence is the recommended path through the Knowledge Base. Each document builds on the previous one.
 
-| Step | Document | Path | Prerequisites |
-|------|----------|------|---------------|
-| 1 | Project Overview | [`00_PROJECT_OVERVIEW.md`](00_PROJECT_OVERVIEW.md) | None |
-| 2 | Engineering Philosophy | [`01_ENGINEERING_PHILOSOPHY.md`](01_ENGINEERING_PHILOSOPHY.md) | Project Overview |
-| 3 | Architecture | [`02_ARCHITECTURE.md`](02_ARCHITECTURE.md) | Engineering Philosophy |
-| 4 | Components | [`03_COMPONENTS.md`](03_COMPONENTS.md) | Architecture |
-| 5 | Public APIs | [`04_PUBLIC_APIS.md`](04_PUBLIC_APIS.md) | Components |
-| 6 | Internal Infrastructure | [`05_INTERNAL_INFRASTRUCTURE.md`](05_INTERNAL_INFRASTRUCTURE.md) | Public APIs |
-| 7 | Baseline | [`06_BASELINE.md`](06_BASELINE.md) | Internal Infrastructure |
-| 8 | Roadmap | [`07_ROADMAP.md`](07_ROADMAP.md) | Baseline |
-| 9 | Architecture Decisions | [`08_ARCHITECTURE_DECISIONS.md`](08_ARCHITECTURE_DECISIONS.md) | Baseline |
-| 10 | AI Rules | [`09_AI_RULES.md`](09_AI_RULES.md) | Engineering Philosophy |
-| 11 | Review Process | [`10_REVIEW_PROCESS.md`](10_REVIEW_PROCESS.md) | AI Rules |
-| 12 | Glossary | [`11_GLOSSARY.md`](11_GLOSSARY.md) | Any (reference only) |
+| Step | Document | Category | Path | Prerequisites |
+|------|----------|----------|------|---------------|
+| 1 | Project Overview | Vision | [`00_PROJECT_OVERVIEW.md`](00_PROJECT_OVERVIEW.md) | None |
+| 2 | Engineering Philosophy | Engineering | [`01_ENGINEERING_PHILOSOPHY.md`](01_ENGINEERING_PHILOSOPHY.md) | Project Overview |
+| 3 | Architecture | Architecture | [`02_ARCHITECTURE.md`](02_ARCHITECTURE.md) | Engineering Philosophy |
+| 4 | Components | Architecture | [`03_COMPONENTS.md`](03_COMPONENTS.md) | Architecture |
+| 5 | Public APIs | Architecture | [`04_PUBLIC_APIS.md`](04_PUBLIC_APIS.md) | Components |
+| 6 | Internal Infrastructure | Architecture | [`05_INTERNAL_INFRASTRUCTURE.md`](05_INTERNAL_INFRASTRUCTURE.md) | Public APIs |
+| 7 | Baseline | Governance | [`06_BASELINE.md`](06_BASELINE.md) | Internal Infrastructure |
+| 8 | Roadmap | Planning | [`07_ROADMAP.md`](07_ROADMAP.md) | Baseline |
+| 9 | Architecture Decisions | Reference | [`08_ARCHITECTURE_DECISIONS.md`](08_ARCHITECTURE_DECISIONS.md) | Baseline |
+| 10 | AI Rules | Engineering | [`09_AI_RULES.md`](09_AI_RULES.md) | Engineering Philosophy |
+| 11 | Review Process | Governance | [`10_REVIEW_PROCESS.md`](10_REVIEW_PROCESS.md) | AI Rules |
+| 12 | Glossary | Reference | [`11_GLOSSARY.md`](11_GLOSSARY.md) | Any (reference only) |
 
 ---
 
@@ -41,7 +41,55 @@ Reading order: Review Process → Baseline → AI Rules → Architecture Decisio
 
 ### AI Implementation Agents
 
-Start with AGENTS.md, then follow the canonical reading order (1-12), then consult the current EPIC.
+Start with AGENTS.md, then follow the full canonical reading order, then consult the current EPIC.
+
+---
+
+## Knowledge Taxonomy
+
+Every KB document belongs to exactly one category. See [`README.md`](README.md#knowledge-taxonomy) for full definitions.
+
+| Category | Documents |
+|----------|-----------|
+| Vision | 00 |
+| Engineering | 01, 09 |
+| Architecture | 02, 03, 04, 05 |
+| Governance | 06, 10 |
+| Planning | 07 |
+| Reference | 08, 11 |
+
+---
+
+## Single Source of Truth
+
+Every major concept has exactly one canonical document. See [`README.md`](README.md#single-source-of-truth) for the complete map.
+
+| Concept | Canonical Source |
+|---------|-----------------|
+| Project identity | 00_PROJECT_OVERVIEW.md |
+| Engineering principles | 01_ENGINEERING_PHILOSOPHY.md |
+| Platform architecture | 02_ARCHITECTURE.md |
+| Component design | 03_COMPONENTS.md |
+| Public API contracts | 04_PUBLIC_APIS.md |
+| Internal infrastructure | 05_INTERNAL_INFRASTRUCTURE.md |
+| Accepted state | 06_BASELINE.md |
+| Future plans | 07_ROADMAP.md |
+| Decision rationale | 08_ARCHITECTURE_DECISIONS.md |
+| AI rules | 09_AI_RULES.md |
+| Review process | 10_REVIEW_PROCESS.md |
+| Terminology | 11_GLOSSARY.md |
+
+---
+
+## Dependency Graph
+
+```
+Vision → Engineering → Architecture → Governance → Planning
+
+Reference ← (supports all, depends on none)
+```
+
+The graph is acyclic. See [`README.md`](README.md#documentation-dependency-graph) for the full diagram.
 
 ---
 
