@@ -39,7 +39,7 @@ export interface Version<TSnapshot extends Snapshot<any>, TDiff> {
  */
 export class VersionManager {
     private counter = 0;
-    private history: Map<VersionId, Version<Snapshot<unknown>, unknown>> = new Map();
+    private historyMap: Map<VersionId, Version<Snapshot<unknown>, unknown>> = new Map();
     private subscribers: Set<(v: Version<Snapshot<unknown>, unknown>) => void> = new Set();
 
     /**
@@ -74,7 +74,7 @@ export class VersionManager {
         };
         
         // Store immutable version in history
-        this.history.set(id, Object.freeze(version));
+        this.historyMap.set(id, Object.freeze(version));
         
         // Notify all subscribers
         for (const subscriber of this.subscribers) {
@@ -97,7 +97,7 @@ export class VersionManager {
      * Get the latest version.
      */
     latest(): Version<Snapshot<unknown>, unknown> | undefined {
-        const latest = this.history.get(`v${this.counter}`);
+        const latest = this.historyMap.get(`v${this.counter}`);
         return latest;
     }
 
@@ -105,21 +105,21 @@ export class VersionManager {
      * Get full history as immutable array.
      */
     history(): ReadonlyArray<Version<Snapshot<unknown>, unknown>> {
-        return Object.freeze(Array.from(this.history.values()));
+        return Object.freeze(Array.from(this.historyMap.values()));
     }
 
     /**
      * Get a specific version by ID.
      */
     get(id: VersionId): Version<Snapshot<unknown>, unknown> | undefined {
-        return this.history.get(id);
+        return this.historyMap.get(id);
     }
 
     /**
      * Clear all history and subscribers.
      */
     clear(): void {
-        this.history.clear();
+        this.historyMap.clear();
         this.subscribers.clear();
         this.counter = 0;
     }
