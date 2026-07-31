@@ -22,6 +22,7 @@ export class SessionMemory {
     private currentUrl: string = "";
     private currentTitle: string = "";
     private trackingId: ReturnType<typeof setInterval> | null = null;
+    private visibilityBound = false;
     private newEventCallback: (() => void) | null = null;
     private storage: typeof StorageService | null = null;
     private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -42,10 +43,22 @@ export class SessionMemory {
             this.currentUrl = window.location.href;
             this.currentTitle = document.title || window.location.href;
         }
-        this.trackingId = setInterval(() => this.checkPageChange(), TRACK_INTERVAL_MS);
+        this.installVisibilityListener();
+        this.resumeTracking();
     }
 
     stop(): void {
+        this.removeVisibilityListener();
+        this.pauseTracking();
+        this.flush();
+    }
+
+    private resumeTracking(): void {
+        if (document.hidden || this.trackingId !== null) return;
+        this.trackingId = setInterval(() => this.checkPageChange(), TRACK_INTERVAL_MS);
+    }
+
+    private pauseTracking(): void {
         if (this.trackingId !== null) {
             clearInterval(this.trackingId);
             this.trackingId = null;
@@ -54,8 +67,29 @@ export class SessionMemory {
             clearTimeout(this.saveTimer);
             this.saveTimer = null;
         }
-        this.flush();
     }
+
+    private installVisibilityListener(): void {
+        if (this.visibilityBound) return;
+        this.visibilityBound = true;
+        document.addEventListener("visibilitychange", this.onVisibilityChange);
+    }
+
+    private removeVisibilityListener(): void {
+        if (!this.visibilityBound) return;
+        this.visibilityBound = false;
+        document.removeEventListener("visibilitychange", this.onVisibilityChange);
+    }
+
+    private onVisibilityChange = (): void => {
+        if (document.hidden) {
+            this.pauseTracking();
+            this.flush();
+        } else {
+            this.resumeTracking();
+            this.checkPageChange();
+        }
+    };
 
     getEvents(): readonly SessionEvent[] {
         return this.events;
