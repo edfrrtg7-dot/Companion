@@ -28,7 +28,6 @@ export interface LauncherDiagnosticsState {
 }
 
 export class LauncherDiagnostics {
-    private readonly enabled: boolean;
     private stages: LauncherDiagnosticsStage[] = [];
     private failed = false;
     private completed = false;
@@ -38,8 +37,8 @@ export class LauncherDiagnostics {
     private globalStateName?: string;
     private moduleInfo?: ModuleDiagnosticsInfo;
 
-    constructor() {
-        this.enabled = isDevMode();
+    private get enabled(): boolean {
+        return isDevMode();
     }
 
     setActiveImplementations(platform: string, runtime: string, globalState: string): void {

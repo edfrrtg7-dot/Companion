@@ -33,21 +33,6 @@ export interface ErrorHistoryEntry {
 /** Maximum error history entries (legacy: up to 20). */
 const MAX_ERROR_HISTORY = 20;
 
-/** Check if dev mode is active. */
-const IS_DEV: boolean = (() => {
-    try {
-        // Prefer StorageService (respects chrome.storage if available)
-        return StorageService.get(STORAGE_KEYS.DEV_MODE) !== null;
-    } catch {
-        try {
-            // Fallback to direct localStorage
-            return localStorage.getItem(STORAGE_KEYS.DEV_MODE) !== null;
-        } catch {
-            return false;
-        }
-    }
-})();
-
 /** Load error history from storage. */
 function loadErrorHistory(): ErrorHistoryEntry[] {
     try {
@@ -87,7 +72,7 @@ function addErrorHistory(message: string, stack?: string, source?: string): void
  * Log an informational diagnostic message in dev mode only.
  */
 export function diag(...args: unknown[]): void {
-    if (IS_DEV) {
+    if (isDevMode()) {
         console.log(format(DiagnosticLevel.INFO, args), ...args);
     }
 }
@@ -96,7 +81,7 @@ export function diag(...args: unknown[]): void {
  * Log a warning diagnostic message in dev mode only.
  */
 export function diagWarn(...args: unknown[]): void {
-    if (IS_DEV) {
+    if (isDevMode()) {
         console.warn(format(DiagnosticLevel.WARN, args), ...args);
     }
 }
@@ -106,7 +91,7 @@ export function diagWarn(...args: unknown[]): void {
  * Also records to error history.
  */
 export function diagError(...args: unknown[]): void {
-    if (IS_DEV) {
+    if (isDevMode()) {
         console.error(format(DiagnosticLevel.ERROR, args), ...args);
     }
     // Always record errors to history regardless of dev mode
@@ -119,7 +104,7 @@ export function diagError(...args: unknown[]): void {
  * Log a debug diagnostic message in dev mode only.
  */
 export function diagDebug(...args: unknown[]): void {
-    if (IS_DEV) {
+    if (isDevMode()) {
         console.debug(format(DiagnosticLevel.DEBUG, args), ...args);
     }
 }
@@ -129,7 +114,17 @@ export function diagDebug(...args: unknown[]): void {
  * Useful for conditional expensive logging.
  */
 export function isDevMode(): boolean {
-    return IS_DEV;
+    try {
+        // Prefer StorageService (respects chrome.storage if available)
+        return StorageService.get(STORAGE_KEYS.DEV_MODE) !== null;
+    } catch {
+        try {
+            // Fallback to direct localStorage
+            return localStorage.getItem(STORAGE_KEYS.DEV_MODE) !== null;
+        } catch {
+            return false;
+        }
+    }
 }
 
 /**
