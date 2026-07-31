@@ -32,6 +32,9 @@ export interface StorageAdapter {
 
     /** Check if a key exists. */
     exists(key: string): boolean;
+
+    /** Promise that resolves when the adapter is ready (hydrated). */
+    readonly readyPromise: Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -40,6 +43,8 @@ export interface StorageAdapter {
 
 /** Synchronous localStorage adapter. */
 export class LocalStorageAdapter implements StorageAdapter {
+    readonly readyPromise = Promise.resolve();
+
     get(key: string): string | null {
         try {
             return getPlatform().localStorage.getItem(key);
@@ -98,8 +103,13 @@ export class LocalStorageAdapter implements StorageAdapter {
 export class ChromeStorageAdapter implements StorageAdapter {
     private cache: Map<string, string> = new Map();
     private ready = false;
+    private readyResolver: (() => void) | null = null;
+    readonly readyPromise: Promise<void>;
 
     constructor() {
+        this.readyPromise = new Promise<void>(resolve => {
+            this.readyResolver = resolve;
+        });
         this.hydrate();
     }
 
@@ -119,11 +129,14 @@ export class ChromeStorageAdapter implements StorageAdapter {
                     }
                 }
                 this.ready = true;
+                this.readyResolver?.();
             }).catch(() => {
                 this.ready = true;
+                this.readyResolver?.();
             });
         } else {
             this.ready = true;
+            this.readyResolver?.();
         }
     }
 

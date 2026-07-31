@@ -30,15 +30,19 @@ let adapter: StorageAdapter | null = null;
  * Call this during bootstrap to drive adapter creation explicitly.
  * Once called, all storage access goes through the selected adapter.
  * Idempotent — safe to call multiple times.
+ * Returns a promise that resolves when the adapter is ready (hydrated).
  */
-export function initStorage(): void {
-    if (adapter) return;
+export function initStorage(): Promise<void> {
+    if (adapter) {
+        return adapter.readyPromise;
+    }
 
     if (getPlatform().chromeStorage) {
         adapter = new ChromeStorageAdapter();
     } else {
         adapter = new LocalStorageAdapter();
     }
+    return adapter.readyPromise;
 }
 
 /**
@@ -51,6 +55,18 @@ function getAdapter(): StorageAdapter {
         initStorage();
     }
     return adapter;
+}
+
+/**
+ * Wait for storage adapter to be ready (hydrated).
+ * Useful for startup code that needs guaranteed access to persisted data.
+ */
+export async function waitForStorageReady(): Promise<void> {
+    if (!adapter) {
+        await initStorage();
+    } else {
+        await adapter.readyPromise;
+    }
 }
 
 // ---------------------------------------------------------------------------

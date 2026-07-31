@@ -21,14 +21,15 @@ import { ChromeGlobalState } from "./global-state";
 import { getRuntimeEnvironment } from "./runtime-environment";
 import { BootstrapCoordinator } from "./bootstrap-coordinator";
 
-const coordinator: BootstrapCoordinator = createComposition(
+const coordinatorPromise: Promise<BootstrapCoordinator> = createComposition(
     new ChromePlatform(),
     new ChromeRuntimeEnvironment(),
     new ChromeGlobalState(),
 );
 
 /** Start the application lifecycle. Called by extension content script or module auto-start. */
-export function bootstrap(): void {
+export async function bootstrap(): Promise<void> {
+    const coordinator = await coordinatorPromise;
     coordinator.start();
 }
 

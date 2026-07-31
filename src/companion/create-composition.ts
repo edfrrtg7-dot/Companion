@@ -9,7 +9,7 @@ import { ModuleManager } from "./module-manager";
 import { FinanceModule } from "./finance-module";
 import { CompanionModal } from "./companion-modal";
 import { CompanionApp } from "./companion-app";
-import { initStorage, StorageService } from "./storage-service";
+import { initStorage, waitForStorageReady, StorageService } from "./storage-service";
 import { BootstrapCoordinator } from "./bootstrap-coordinator";
 import { SessionMemory, getSessionMemory, setSessionMemory } from "./session-memory";
 
@@ -21,7 +21,7 @@ import { SessionMemory, getSessionMemory, setSessionMemory } from "./session-mem
  * Each entry point provides the appropriate platform implementations and
  * the resulting composition is identical.
  */
-export function createComposition(platform: Platform, runtime: RuntimeEnvironment, globalState: GlobalState): BootstrapCoordinator {
+export async function createComposition(platform: Platform, runtime: RuntimeEnvironment, globalState: GlobalState): Promise<BootstrapCoordinator> {
     setPlatform(platform);
     setRuntimeEnvironment(runtime);
     setGlobalState(globalState);
@@ -34,7 +34,9 @@ export function createComposition(platform: Platform, runtime: RuntimeEnvironmen
         globalState.constructor.name,
     );
 
-    initStorage();
+    // Wait for storage hydration to complete before initializing modules
+    // that depend on persisted data (SessionMemory, FinanceModule)
+    await initStorage();
 
     const sessionMemory = new SessionMemory(StorageService);
     setSessionMemory(sessionMemory);

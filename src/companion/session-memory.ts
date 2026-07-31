@@ -24,7 +24,7 @@ export class SessionMemory {
     private trackingId: ReturnType<typeof setInterval> | null = null;
     private visibilityBound = false;
     private exitBound = false;
-    private newEventCallback: (() => void) | null = null;
+    private newEventCallbacks: Set<() => void> = new Set();
     private storage: typeof StorageService | null = null;
     private saveTimer: ReturnType<typeof setTimeout> | null = null;
     private dirty: boolean = false;
@@ -120,7 +120,18 @@ export class SessionMemory {
     }
 
     setNewEventCallback(callback: (() => void) | null): void {
-        this.newEventCallback = callback;
+        if (callback === null) {
+            this.newEventCallbacks.clear();
+        } else {
+            this.newEventCallbacks.clear();
+            this.newEventCallbacks.add(callback);
+        }
+    }
+
+    /** Add a callback for new session events. Returns a cleanup function. */
+    addNewEventCallback(callback: () => void): () => void {
+        this.newEventCallbacks.add(callback);
+        return () => this.newEventCallbacks.delete(callback);
     }
 
     /** Export session as pretty-printed JSON. */
@@ -164,7 +175,7 @@ export class SessionMemory {
             this.currentUrl = "";
             this.currentTitle = "";
         }
-        this.newEventCallback?.();
+        this.newEventCallbacks.forEach(cb => cb());
         this.flush();
         return this.events.length;
     }
@@ -254,7 +265,7 @@ export class SessionMemory {
         if (this.events.length > MAX_SESSION_EVENTS) {
             this.events.pop();
         }
-        this.newEventCallback?.();
+        this.newEventCallbacks.forEach(cb => cb());
         this.scheduleSave();
     }
 }

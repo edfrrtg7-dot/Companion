@@ -8,6 +8,7 @@ import { setRegisteredModules, exposeDiagnostics } from "./companion-diagnostics
 import type { RuntimeEnvironment } from "./runtime-environment";
 import type { GlobalState } from "./global-state";
 import type { LauncherDiagnostics } from "./launcher-diagnostics";
+import { waitForStorageReady } from "./storage-service";
 
 export class BootstrapCoordinator {
     constructor(
@@ -50,6 +51,10 @@ export class BootstrapCoordinator {
     }
 
     private async run(): Promise<void> {
+        // Ensure storage is fully hydrated before any module initialization
+        // that depends on persisted data (defensive: createComposition already awaits this)
+        await waitForStorageReady();
+
         this.diagnostics.track("main() started", true);
         this.diagnostics.track("document ready", true);
         if (isDevMode()) diag("[bootstrap] createApp() start");

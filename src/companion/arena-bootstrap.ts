@@ -14,14 +14,15 @@ import { ChromeGlobalState } from "./global-state";
 import { getRuntimeEnvironment } from "./runtime-environment";
 import { BootstrapCoordinator } from "./bootstrap-coordinator";
 
-const coordinator: BootstrapCoordinator = createComposition(
+const coordinatorPromise: Promise<BootstrapCoordinator> = createComposition(
     new ArenaPlatform(),
     new ArenaRuntimeEnvironment(),
     new ChromeGlobalState(),
 );
 
 /** Start the application lifecycle. Called by Arena host. */
-export function bootstrap(): void {
+export async function bootstrap(): Promise<void> {
+    const coordinator = await coordinatorPromise;
     coordinator.start();
 }
 

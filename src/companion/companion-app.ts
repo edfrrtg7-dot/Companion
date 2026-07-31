@@ -184,9 +184,9 @@ export class CompanionApp {
     /** Start the Companion application and create the launcher UI. */
     start(): void {
         if (this.started) return;
-        this.started = true;
         this.injectStyles();
         this.createUI();
+        this.started = true;
         diag("initialized");
     }
 
@@ -195,7 +195,9 @@ export class CompanionApp {
     // -------------------------------------------------------------------------
 
     private createUI(): void {
-        if (!document.body) return;
+        if (!document.body) {
+            throw new Error("CompanionApp.createUI(): document.body not available");
+        }
 
         // Launcher button
         const btn = document.createElement("button");

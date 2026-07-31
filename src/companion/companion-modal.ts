@@ -29,6 +29,8 @@ const COMPANION_VERSION = "v2.0.0";
 // ---------------------------------------------------------------------------
 
 let modalOverlay: HTMLElement | null = null;
+let sessionCleanup: (() => void) | null = null;
+let fadingOverlay: HTMLElement | null = null;
 
 // ---------------------------------------------------------------------------
 // Section renderers
@@ -141,7 +143,7 @@ function renderFinanceSection(container: HTMLElement, onFinanceClick: () => void
     container.appendChild(financeBtn);
 }
 
-function renderSessionSection(container: HTMLElement): void {
+function renderSessionSection(container: HTMLElement): () => void {
     const input = document.createElement("input");
     input.type = "text";
     input.className = "ab-session-search";
@@ -212,6 +214,13 @@ function renderSessionSection(container: HTMLElement): void {
 
     renderList("");
     input.addEventListener("input", () => renderList(input.value));
+
+    // Subscribe to session updates for live refresh while modal is open
+    const sessionMemory = getSessionMemory();
+    const callback = () => renderList(input.value);
+    const cleanup = sessionMemory.addNewEventCallback(callback);
+
+    return cleanup;
 }
 
 function createDivider(): HTMLDivElement {
@@ -249,6 +258,11 @@ function onOverlayClick(e: MouseEvent): void {
 // ---------------------------------------------------------------------------
 
 function show(onFinanceClick: () => void): void {
+    // If there's a fading overlay, remove it immediately to prevent duplicates
+    if (fadingOverlay) {
+        fadingOverlay.remove();
+        fadingOverlay = null;
+    }
     if (modalOverlay) return;
 
     injectStyles();
@@ -347,7 +361,10 @@ function show(onFinanceClick: () => void): void {
             try {
                 const text = await file.text();
                 const count = getSessionMemory().importFromJson(text);
-                renderSessionSection(sessionContent);
+                if (sessionCleanup) {
+                    sessionCleanup();
+                }
+                sessionCleanup = renderSessionSection(sessionContent);
                 await showAlert(`Imported ${count} session entries.`);
             } catch {
                 await showAlert("Invalid session file.", true);
@@ -375,7 +392,7 @@ function show(onFinanceClick: () => void): void {
         // Render content into sections
         renderDashboard(statusGrid);
         renderActionsSection(actionsContent, onFinanceClick);
-        renderSessionSection(sessionContent);
+        sessionCleanup = renderSessionSection(sessionContent);
         renderFinanceSection(financeContent, onFinanceClick);
     }
 
@@ -398,10 +415,22 @@ function hide(): void {
     // Remove event listeners
     document.removeEventListener("keydown", onKeyDown);
 
-    // Fade out
+    // Clean up session subscription
+    if (sessionCleanup) {
+        sessionCleanup();
+        sessionCleanup = null;
+    }
+
+    // Fade out - track fading overlay to prevent race
     modalOverlay.classList.remove("visible");
     const overlay = modalOverlay;
-    setTimeout(() => overlay?.remove(), 150);
+    fadingOverlay = overlay;
+    setTimeout(() => {
+        overlay?.remove();
+        if (fadingOverlay === overlay) {
+            fadingOverlay = null;
+        }
+    }, 150);
     modalOverlay = null;
 
     diag("CompanionModal hidden");
