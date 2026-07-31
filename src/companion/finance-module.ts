@@ -253,6 +253,21 @@ export class FinanceModule implements CompanionModule<FinanceSnapshot, FinanceDi
         if (isDevMode()) diag("[FinanceModule] widget shown");
     }
 
+    /**
+     * Restore the widget to its persisted visibility state.
+     * Creates the widget if needed but never forces it visible,
+     * so a persisted `hidden: true` preference is respected at startup.
+     */
+    restoreVisibility(): void {
+        if (!this.initialized || this.disposed) return;
+        if (!this.controller) return;
+
+        if (!this.widget) {
+            this.widget = new FinanceWidget(this.controller);
+        }
+        if (isDevMode()) diag("[FinanceModule] widget visibility restored");
+    }
+
     close(): void {
         if (this.disposed) return;
         this.widget?.hide();

@@ -83,8 +83,8 @@ export class BootstrapCoordinator {
         diag("Starting CompanionApp");
         this.app.start();
 
-        if (isDevMode()) diag("[bootstrap] Auto-launching Finance module");
-        this.financeModule?.open();
+        if (isDevMode()) diag("[bootstrap] Restoring Finance module visibility");
+        this.financeModule?.restoreVisibility();
 
         exposeDiagnostics();
         this.diagnostics.track("initialization completed", true);
