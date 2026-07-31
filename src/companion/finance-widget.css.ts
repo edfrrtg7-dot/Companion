@@ -27,8 +27,9 @@ export const FINANCE_WIDGET_CSS = `
     overflow: hidden;
 }
 
-/* Collapsed — JS sets explicit dimensions via COLLAPSED_WIDTH/HEIGHT constants.
-   CSS only hides the resize handle and adjusts header border. */
+/* Collapsed — JS sets explicit dimensions (height 44px, width = expanded width).
+   CSS makes the header fill the collapsed bar exactly and centers its content,
+   so title, CASH, and actions stay vertically aligned with the expanded layout. */
 .ab-finance.collapsed .ab-finance-resize-handle {
     display: none;
 }
@@ -36,6 +37,10 @@ export const FINANCE_WIDGET_CSS = `
 .ab-finance.collapsed .ab-finance-header {
     border-bottom: none;
     border-radius: 10px;
+    min-height: 0;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 0 12px;
 }
 
 /* Resize handle */
@@ -126,27 +131,12 @@ export const FINANCE_WIDGET_CSS = `
     background: rgba(255,255,255,0.1);
 }
 
-/* Header refresh button */
-.ab-finance-header-refresh-btn {
-    font-size: 16px !important;
-    line-height: 1;
-}
-
-.ab-finance-header-refresh-btn.spinning {
-    animation: ab-finance-spin 0.6s linear infinite;
-}
-
-.ab-finance-header-refresh-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
 @keyframes ab-finance-spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
 
-/* CASH indicator */
+/* CASH indicator — doubles as the refresh control */
 .ab-finance-cash-indicator {
     display: flex;
     align-items: center;
@@ -155,8 +145,23 @@ export const FINANCE_WIDGET_CSS = `
     border-radius: 4px;
     background: rgba(255, 215, 0, 0.08);
     border: 1px solid rgba(255, 215, 0, 0.15);
-    cursor: default;
+    cursor: pointer;
     flex-shrink: 0;
+    font: inherit;
+    color: inherit;
+    line-height: 1;
+}
+
+.ab-finance-cash-indicator:hover {
+    background: rgba(255, 215, 0, 0.16);
+    border-color: rgba(255, 215, 0, 0.3);
+}
+
+.ab-finance-cash-indicator:disabled {
+    opacity: 0.5;
+    cursor: default;
+    background: rgba(255, 215, 0, 0.08);
+    border-color: rgba(255, 215, 0, 0.15);
 }
 
 .ab-finance-cash-icon {
@@ -170,6 +175,21 @@ export const FINANCE_WIDGET_CSS = `
     color: #FFD700;
     letter-spacing: 0.5px;
     text-transform: uppercase;
+}
+
+.ab-finance-cash-refresh {
+    font-size: 12px;
+    line-height: 1;
+    color: rgba(255, 215, 0, 0.6);
+    transition: color 0.15s ease;
+}
+
+.ab-finance-cash-indicator:hover .ab-finance-cash-refresh {
+    color: #FFD700;
+}
+
+.ab-finance-cash-refresh.spinning {
+    animation: ab-finance-spin 0.6s linear infinite;
 }
 
 .ab-finance-cash-dot {
@@ -187,6 +207,86 @@ export const FINANCE_WIDGET_CSS = `
 @keyframes ab-finance-gold-pulse {
     0%, 100% { opacity: 0.4; transform: scale(0.8); }
     50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* Shift selector */
+.ab-finance-shift-btn {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.5);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+.ab-finance-shift-btn:hover {
+    color: #E0E0E0;
+    background: rgba(255,255,255,0.1);
+}
+
+.ab-finance-shift-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    background: #1F2235;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 4px;
+    z-index: 10;
+    min-width: 160px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.ab-finance-shift-dropdown.open {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.ab-finance-shift-option {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+    text-align: left;
+    color: #E0E0E0;
+    transition: all 0.15s ease;
+    width: 100%;
+}
+
+.ab-finance-shift-option:hover {
+    background: rgba(255,255,255,0.08);
+}
+
+.ab-finance-shift-option.active {
+    background: #2F6BFF;
+    border-color: #2F6BFF;
+    color: #FFFFFF;
+}
+
+.ab-finance-shift-option.active:hover {
+    background: #4A82FF;
+}
+
+.ab-finance-shift-name {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.ab-finance-shift-time {
+    font-size: 9px;
+    opacity: 0.7;
 }
 
 /* Collapse button */

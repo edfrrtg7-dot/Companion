@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.1.0
+
+RC-POLISH-003 — operator UI cleanup and Finance workflow restoration.
+
+- **Changed**: Launcher version is now `v2.1.0`, sourced from a single authoritative constant (`src/companion/app-version.ts`) consumed by the modal header; extension manifest kept in sync.
+- **Removed**: Session UI from the launcher modal (search list, export/import). SessionMemory runtime work is no longer started.
+- **Removed**: Red unread badge/artifact from the launcher — the launcher presents as a clean circle.
+- **Changed**: Finance widget `CASH` indicator is now the refresh control (with a refresh icon beside the label); the separate header refresh button was removed.
+- **Removed**: Finance header double-click collapse; collapse is triggered by the collapse button only.
+- **Restored**: Finance shift selector (Morning / Day / Night) in the widget header, reusing `FinanceShift` persistence.
+- **Changed**: Collapsed Finance header keeps the expanded widget width and vertically centers its content.
+- **Changed**: Launcher Finance button now toggles the widget (opens when hidden, closes when visible) for full lifecycle control.
+
 ## v1.11.0
 
 Finance Synchronization Layer — automatic widget sync via DOM observation.

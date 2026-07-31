@@ -87,9 +87,8 @@ All Companion UI follows consistent visual and behavioral standards. Every modul
 
 ## Collapse Behavior
 
-- Trigger: collapse button click or double-click header
-- Double-click excluded: button targets
-- Collapsed layout: header-only (330x44px)
+- Trigger: collapse button click
+- Collapsed layout: header-only (44px tall, keeps the expanded width)
 - Expanded layout: restores exact previous dimensions
 - Body hidden with `display: none` when collapsed
 - Collapse button toggles between arrow-right and arrow-down

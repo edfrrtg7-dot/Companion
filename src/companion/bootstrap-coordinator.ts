@@ -79,8 +79,8 @@ export class BootstrapCoordinator {
         this.diagnostics.track("root container created", true);
 
         this.modal.setFinanceClickHandler(() => {
-            if (isDevMode()) diag("[bootstrap] Finance button clicked, opening FinanceModule");
-            this.financeModule?.open();
+            if (isDevMode()) diag("[bootstrap] Finance button clicked, toggling FinanceModule");
+            this.financeModule?.toggle();
         });
 
         this.diagnostics.track("launcher created", true);

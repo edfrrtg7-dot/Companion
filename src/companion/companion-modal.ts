@@ -16,20 +16,13 @@ import { diag } from "./dev";
 import { showAlert, showConfirm, showDelayModal, showImportSnippetsModal } from "./companion-dialogs";
 import { injectStyles } from "./companion-styles";
 import { COMPANION_LOGO_DATA_URI } from "./brand-logo";
-import { getSessionMemory } from "./session-memory";
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const COMPANION_VERSION = "v2.0.0";
+import { APP_VERSION } from "./app-version";
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
 let modalOverlay: HTMLElement | null = null;
-let sessionCleanup: (() => void) | null = null;
 let fadingOverlay: HTMLElement | null = null;
 
 // ---------------------------------------------------------------------------
@@ -143,95 +136,6 @@ function renderFinanceSection(container: HTMLElement, onFinanceClick: () => void
     container.appendChild(financeBtn);
 }
 
-function renderSessionSection(container: HTMLElement): { refresh: () => void; destroy: () => void } {
-    // Clear any existing content to prevent DOM duplication on re-render
-    container.innerHTML = "";
-
-    const input = document.createElement("input");
-    input.type = "text";
-    input.className = "ab-session-search";
-    input.placeholder = "Search pages...";
-    container.appendChild(input);
-
-    const listEl = document.createElement("div");
-    listEl.className = "ab-session-list";
-    container.appendChild(listEl);
-
-    function formatTime(ts: number): string {
-        const diff = Date.now() - ts;
-        if (diff < 60000) return "just now";
-        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-        return `${Math.floor(diff / 3600000)}h ago`;
-    }
-
-    function highlight(text: string, query: string): string {
-        if (!query) return text;
-        const idx = text.toLowerCase().indexOf(query.toLowerCase());
-        if (idx === -1) return text;
-        const before = text.slice(0, idx);
-        const match = text.slice(idx, idx + query.length);
-        const after = text.slice(idx + query.length);
-        return `${before}<mark class="ab-session-highlight">${match}</mark>${after}`;
-    }
-
-    function renderList(query: string): void {
-        const events = getSessionMemory().getEvents();
-        const lower = query.toLowerCase().trim();
-        const filtered = lower
-            ? events.filter(e => e.title.toLowerCase().includes(lower) || e.url.toLowerCase().includes(lower))
-            : events;
-
-        listEl.innerHTML = "";
-
-        if (filtered.length === 0) {
-            const empty = document.createElement("div");
-            empty.className = "ab-session-empty";
-            empty.textContent = lower ? "No matching pages." : "No pages visited yet.";
-            listEl.appendChild(empty);
-            return;
-        }
-
-        for (const event of filtered) {
-            const item = document.createElement("div");
-            item.className = "ab-session-item";
-
-            const title = document.createElement("span");
-            title.className = "ab-session-title";
-            if (lower) {
-                title.innerHTML = highlight(event.title, query);
-            } else {
-                title.textContent = event.title;
-            }
-            item.appendChild(title);
-
-            const time = document.createElement("span");
-            time.className = "ab-session-time";
-            time.textContent = formatTime(event.timestamp);
-            item.appendChild(time);
-
-            item.addEventListener("click", () => { window.location.href = event.url; });
-            item.style.cursor = "pointer";
-            listEl.appendChild(item);
-        }
-    }
-
-    renderList("");
-    input.addEventListener("input", () => renderList(input.value));
-
-    // Subscribe to session updates for live refresh while modal is open
-    const sessionMemory = getSessionMemory();
-    const callback = () => renderList(input.value);
-    const sessionCleanup = sessionMemory.addNewEventCallback(callback);
-
-    return {
-        refresh: () => renderList(input.value),
-        destroy: () => {
-            sessionCleanup();
-            container.innerHTML = "";
-        }
-    };
-}
-
 function createDivider(): HTMLDivElement {
     const div = document.createElement("div");
     div.style.borderTop = "1px solid var(--ab-border)";
@@ -287,7 +191,7 @@ function show(onFinanceClick: () => void): void {
                     <span class="ab-header-title">Companion</span>
                 </div>
                 <div class="ab-header-right">
-                    <span class="ab-header-version">${COMPANION_VERSION}</span>
+                    <span class="ab-header-version">${APP_VERSION}</span>
                     <div class="ab-close-icon" id="ab-main-close">
                         <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
                     </div>
@@ -329,64 +233,6 @@ function show(onFinanceClick: () => void): void {
         actionsSection.appendChild(actionsContent);
         content.appendChild(actionsSection);
 
-        // Session section
-        const sessionSection = document.createElement("div");
-        sessionSection.className = "ab-section";
-        const sessionHeader = document.createElement("div");
-        sessionHeader.className = "ab-section-header";
-        sessionHeader.appendChild(createSectionTitle("Session"));
-        const sessionActions = document.createElement("div");
-        sessionActions.className = "ab-section-actions";
-
-        const exportBtn = document.createElement("button");
-        exportBtn.className = "ab-btn ab-btn-sm";
-        exportBtn.title = "Export session to JSON file";
-        exportBtn.innerHTML = `<svg style="width:14px;height:14px;fill:currentColor" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg> Export`;
-        exportBtn.addEventListener("click", () => {
-            const json = getSessionMemory().exportToJson();
-            const blob = new Blob([json], { type: "application/json" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `companion-session-${new Date().toISOString().slice(0, 10)}.json`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-        });
-        sessionActions.appendChild(exportBtn);
-
-        const importBtn = document.createElement("button");
-        importBtn.className = "ab-btn ab-btn-sm";
-        importBtn.title = "Import session from JSON file";
-        importBtn.innerHTML = `<svg style="width:14px;height:14px;fill:currentColor" viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5z"/></svg> Import`;
-        const fileInput = document.createElement("input");
-        fileInput.type = "file";
-        fileInput.accept = ".json";
-        fileInput.style.display = "none";
-        fileInput.addEventListener("change", async (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (!file) return;
-            try {
-                const text = await file.text();
-                const count = getSessionMemory().importFromJson(text);
-                sessionAPI.refresh();
-                await showAlert(`Imported ${count} session entries.`);
-            } catch {
-                await showAlert("Invalid session file.", true);
-            }
-            fileInput.value = "";
-        });
-        importBtn.addEventListener("click", () => fileInput.click());
-        sessionActions.appendChild(importBtn);
-        sessionActions.appendChild(fileInput);
-
-        sessionHeader.appendChild(sessionActions);
-        sessionSection.appendChild(sessionHeader);
-        const sessionContent = document.createElement("div");
-        sessionSection.appendChild(sessionContent);
-        content.appendChild(sessionSection);
-
         // Finance section
         const financeSection = document.createElement("div");
         financeSection.className = "ab-section";
@@ -398,8 +244,6 @@ function show(onFinanceClick: () => void): void {
         // Render content into sections
         renderDashboard(statusGrid);
         renderActionsSection(actionsContent, onFinanceClick);
-        const sessionAPI = renderSessionSection(sessionContent);
-        sessionCleanup = sessionAPI.destroy;
         renderFinanceSection(financeContent, onFinanceClick);
     }
 
@@ -421,12 +265,6 @@ function hide(): void {
 
     // Remove event listeners
     document.removeEventListener("keydown", onKeyDown);
-
-    // Clean up session subscription
-    if (sessionCleanup) {
-        sessionCleanup();
-        sessionCleanup = null;
-    }
 
     // Fade out - track fading overlay to prevent race
     modalOverlay.classList.remove("visible");

@@ -234,72 +234,6 @@ export const COMPANION_STYLES_CSS = `
     justify-content: center;
 }
 
-/* ── Session list ── */
-.ab-session-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-.ab-session-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 10px;
-    border-radius: 6px;
-    background: rgba(255,255,255,0.03);
-    transition: background 0.15s;
-    gap: 12px;
-}
-.ab-session-item:hover {
-    background: rgba(255,255,255,0.08);
-}
-.ab-session-title {
-    font-size: 13px;
-    color: var(--ab-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-    min-width: 0;
-}
-.ab-session-time {
-    font-size: 11px;
-    color: var(--ab-text-dim);
-    white-space: nowrap;
-    flex-shrink: 0;
-}
-.ab-session-empty {
-    font-size: 13px;
-    color: var(--ab-text-dim);
-    padding: 8px 0;
-}
-
-.ab-session-search {
-    width: 100%;
-    padding: 8px 10px;
-    border-radius: 6px;
-    border: 1px solid var(--ab-border);
-    background: rgba(255,255,255,0.05);
-    color: var(--ab-text);
-    font-size: 13px;
-    font-family: var(--ab-font);
-    outline: none;
-    box-sizing: border-box;
-    transition: border-color 0.15s;
-}
-.ab-session-search::placeholder {
-    color: var(--ab-text-dim);
-}
-.ab-session-search:focus {
-    border-color: var(--ab-accent);
-}
-
-.ab-session-highlight {
-    background: rgba(47,107,255,0.3);
-    border-radius: 2px;
-    padding: 0 1px;
-}
-
 /* ── Buttons ── */
 .ab-btn {
     background: rgba(255,255,255,0.05);
@@ -337,24 +271,6 @@ export const COMPANION_STYLES_CSS = `
     color: #fca5a5;
 }
 .ab-btn.danger:hover { background: rgba(239,68,68,0.3); }
-
-.ab-btn-sm {
-    padding: 6px 10px;
-    font-size: 12px;
-    gap: 6px;
-}
-
-/* ── Section header with actions ── */
-.ab-section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-}
-.ab-section-actions {
-    display: flex;
-    gap: 6px;
-}
 
 /* ── Diagnostics ── */
 .ab-diag-group { margin-bottom: 16px; }

@@ -9,9 +9,8 @@ import { ModuleManager } from "./module-manager";
 import { FinanceModule } from "./finance-module";
 import { CompanionModal } from "./companion-modal";
 import { CompanionApp } from "./companion-app";
-import { initStorage, waitForStorageReady, StorageService } from "./storage-service";
+import { initStorage, waitForStorageReady } from "./storage-service";
 import { BootstrapCoordinator } from "./bootstrap-coordinator";
-import { SessionMemory, getSessionMemory, setSessionMemory } from "./session-memory";
 
 /**
  * Create the complete application object graph for a given set of
@@ -35,12 +34,8 @@ export async function createComposition(platform: Platform, runtime: RuntimeEnvi
     );
 
     // Wait for storage hydration to complete before initializing modules
-    // that depend on persisted data (SessionMemory, FinanceModule)
+    // that depend on persisted data
     await initStorage();
-
-    const sessionMemory = new SessionMemory(StorageService);
-    setSessionMemory(sessionMemory);
-    sessionMemory.start();
 
     const manager = new ModuleManager();
     const financeModule = new FinanceModule();

@@ -274,6 +274,18 @@ export class FinanceModule implements CompanionModule<FinanceSnapshot, FinanceDi
         if (isDevMode()) diag("[FinanceModule] widget hidden");
     }
 
+    /**
+     * Toggle the widget between shown and hidden states, creating it on
+     * first use. Full lifecycle control from the launcher button.
+     */
+    toggle(): void {
+        if (this.isOpen) {
+            this.close();
+        } else {
+            this.open();
+        }
+    }
+
     get isOpen(): boolean {
         return this.widget?.isVisible ?? false;
     }

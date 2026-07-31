@@ -17,7 +17,6 @@ import { Z } from "./layering";
 import { copyDebugBundle } from "./companion-diagnostics-collectors";
 import { showToast } from "./companion-styles";
 import { getLauncherDiagnostics } from "./launcher-diagnostics";
-import { getSessionMemory } from "./session-memory";
 
 // ---------------------------------------------------------------------------
 // CSS
@@ -125,29 +124,6 @@ const LAUNCHER_CSS = `
     transform: scale(0.9);
     transition-duration: 0.05s;
 }
-
-#ab-companion-badge {
-    position: absolute;
-    top: -4px;
-    right: -4px;
-    min-width: 18px;
-    height: 18px;
-    border-radius: 9px;
-    background: #FF3B30;
-    color: #FFFFFF;
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 18px;
-    text-align: center;
-    padding: 0 4px;
-    box-sizing: border-box;
-    pointer-events: none;
-    display: none;
-}
-
-#ab-companion-badge.visible {
-    display: block;
-}
 `;
 
 // ---------------------------------------------------------------------------
@@ -160,7 +136,6 @@ export class CompanionApp {
 
     private readonly moduleManager: ModuleManager;
     private launcher: HTMLButtonElement | null = null;
-    private badge: HTMLDivElement | null = null;
 
     constructor(moduleManager: ModuleManager) {
         if (CompanionApp.instance) {
@@ -206,12 +181,6 @@ export class CompanionApp {
         btn.innerHTML = COMPANION_LOGO_WHITE_SVG;
         btn.addEventListener("click", () => this.onLauncherClick());
 
-        // Badge
-        const badge = document.createElement("div");
-        badge.id = "ab-companion-badge";
-        btn.appendChild(badge);
-        this.badge = badge;
-
         document.body.appendChild(btn);
         this.launcher = btn;
         getLauncherDiagnostics().track("launcher mounted", true);
@@ -228,27 +197,12 @@ export class CompanionApp {
         // Register visibility change callback to keep launcher state synced
         const modal = CompanionModal.getInstance();
         modal.setOnVisibilityChange(() => this.syncLauncherState());
-
-        // Wire SessionMemory badge updates
-        getSessionMemory().setNewEventCallback(() => this.updateBadge());
-        this.updateBadge(); // sync badge with restored events
     }
 
     private syncLauncherState(): void {
         if (!this.launcher) return;
         const modal = CompanionModal.getInstance();
         this.launcher.classList.toggle("active", modal.isVisible);
-    }
-
-    private updateBadge(): void {
-        if (!this.badge) return;
-        const count = getSessionMemory().getRecentCount();
-        if (count > 0) {
-            this.badge.textContent = count > 99 ? "99+" : String(count);
-            this.badge.classList.add("visible");
-        } else {
-            this.badge.classList.remove("visible");
-        }
     }
 
     private onLauncherClick(): void {

@@ -49,7 +49,6 @@ const MIN_HEIGHT = 200;
 const MAX_WIDTH = 700;
 const MAX_HEIGHT = 600;
 
-const COLLAPSED_WIDTH = 330;
 const COLLAPSED_HEIGHT = 44;
 
 import { StorageService } from "./storage-service";
@@ -161,7 +160,6 @@ export abstract class CompanionWindow {
     protected initWindow(dragHandle: HTMLElement, resizeHandle: HTMLElement): void {
         // Set up event listeners
         dragHandle.addEventListener("pointerdown", this.onDragPointerDown);
-        dragHandle.addEventListener("dblclick", this.onHeaderDoubleClick);
         resizeHandle.addEventListener("pointerdown", this.onResizePointerDown);
         this.collapseBtn?.addEventListener("click", this.onCollapseClick);
         this.closeBtn?.addEventListener("click", this.onCloseClick);
@@ -289,11 +287,12 @@ export abstract class CompanionWindow {
         // Hide body completely
         this.contentEl.style.display = "none";
 
-        // Set fixed collapsed dimensions
-        this.root.style.width = COLLAPSED_WIDTH + "px";
+        // Collapse to a compact title bar that keeps the expanded width,
+        // so the header controls stay aligned with the expanded layout.
+        this.root.style.width = this.win.width + "px";
         this.root.style.height = COLLAPSED_HEIGHT + "px";
         this.root.style.minHeight = COLLAPSED_HEIGHT + "px";
-        this.root.style.minWidth = COLLAPSED_WIDTH + "px";
+        this.root.style.minWidth = this.win.width + "px";
         this.root.style.overflow = "hidden";
 
         // Update UI
@@ -325,7 +324,7 @@ export abstract class CompanionWindow {
     private normalizePosition(): boolean {
         const viewportWidth = window.innerWidth || 0;
         const viewportHeight = window.innerHeight || 0;
-        const width = this.win.collapsed ? COLLAPSED_WIDTH : this.win.width;
+        const width = this.win.width;
         const height = this.win.collapsed ? COLLAPSED_HEIGHT : this.win.height;
         const maxX = Math.max(0, viewportWidth - width);
         const maxY = Math.max(0, viewportHeight - height);
@@ -422,13 +421,6 @@ export abstract class CompanionWindow {
         if (this.destroyed) return;
         this.hide();
         this.onClose?.();
-    };
-
-    private onHeaderDoubleClick = (e: MouseEvent): void => {
-        if (this.destroyed) return;
-        const target = e.target as HTMLElement;
-        if (target.closest("button")) return;
-        this.toggleCollapse();
     };
 
     // -------------------------------------------------------------------------
