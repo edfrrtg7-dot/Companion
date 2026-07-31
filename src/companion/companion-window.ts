@@ -114,6 +114,9 @@ export abstract class CompanionWindow {
     // Keyboard handler
     private boundOnKeyDown: ((e: KeyboardEvent) => void) | null = null;
 
+    // Window resize handler
+    private boundOnWindowResize: (() => void) | null = null;
+
     // Drag state
     private isDragging = false;
     private dragStartX = 0;
@@ -144,6 +147,7 @@ export abstract class CompanionWindow {
         // Load persisted state
         const saved = loadState(this.storageKey) ?? this.defaultState;
         this.win = { ...saved };
+        this.recoverPosition();
     }
 
     // -------------------------------------------------------------------------
@@ -162,6 +166,10 @@ export abstract class CompanionWindow {
         this.collapseBtn?.addEventListener("click", this.onCollapseClick);
         this.closeBtn?.addEventListener("click", this.onCloseClick);
 
+        // Recover off-screen position when the viewport changes
+        this.boundOnWindowResize = this.onWindowResize;
+        window.addEventListener("resize", this.boundOnWindowResize);
+
         // Install keyboard listener if visible
         if (!this.win.hidden) {
             this.installKeyboardListener();
@@ -179,6 +187,7 @@ export abstract class CompanionWindow {
         this.cancelDrag();
         this.cancelResize();
         this.removeKeyboardListener();
+        this.removeWindowResizeListener();
         this.root?.remove();
         this.root = null;
         this.contentEl = null;
@@ -197,6 +206,7 @@ export abstract class CompanionWindow {
         if (this.destroyed || !this.root) return;
         this.win = { ...this.win, hidden: false };
         this.root.style.display = "";
+        this.recoverPosition();
         this.installKeyboardListener();
         this.persistState();
         if (isDevMode()) diag("[CompanionWindow] show() end");
@@ -255,6 +265,7 @@ export abstract class CompanionWindow {
         this.win = { ...this.win, collapsed: false };
         this.root.classList.remove(`${this.classPrefix}-collapsed`);
         this.updateCollapseButton();
+        this.recoverPosition();
         this.persistState();
         if (isDevMode()) diag("[CompanionWindow] expand() end");
     }
@@ -288,6 +299,7 @@ export abstract class CompanionWindow {
         // Update UI
         this.root.classList.add(`${this.classPrefix}-collapsed`);
         this.updateCollapseButton();
+        this.recoverPosition();
         this.persistState();
     }
 
@@ -297,6 +309,61 @@ export abstract class CompanionWindow {
             this.expand();
         } else {
             this.collapse();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Position normalization — keep the header and its controls reachable
+    // -------------------------------------------------------------------------
+
+    /**
+     * Clamp the window position to the current viewport so the header and its
+     * controls stay reachable. The full widget fits in the viewport where
+     * possible; when the widget is larger than the viewport, the header is
+     * kept visible. Returns true when the position was corrected.
+     */
+    private normalizePosition(): boolean {
+        const viewportWidth = window.innerWidth || 0;
+        const viewportHeight = window.innerHeight || 0;
+        const width = this.win.collapsed ? COLLAPSED_WIDTH : this.win.width;
+        const height = this.win.collapsed ? COLLAPSED_HEIGHT : this.win.height;
+        const maxX = Math.max(0, viewportWidth - width);
+        const maxY = Math.max(0, viewportHeight - height);
+        const x = Math.max(0, Math.min(this.win.x, maxX));
+        const y = Math.max(0, Math.min(this.win.y, maxY));
+        if (x === this.win.x && y === this.win.y) return false;
+        this.win = { ...this.win, x, y };
+        return true;
+    }
+
+    /** Apply the persisted position to the root element. */
+    private applyPosition(): void {
+        if (!this.root) return;
+        this.root.style.left = this.win.x + "px";
+        this.root.style.top = this.win.y + "px";
+        this.root.style.bottom = "auto";
+        this.root.style.right = "auto";
+    }
+
+    /**
+     * Normalize the position against the current viewport and persist the
+     * corrected state when a change was required.
+     */
+    private recoverPosition(): void {
+        if (!this.normalizePosition()) return;
+        this.applyPosition();
+        this.persistState();
+    }
+
+    private onWindowResize = (): void => {
+        if (this.destroyed || !this.root) return;
+        this.recoverPosition();
+    };
+
+    private removeWindowResizeListener(): void {
+        if (this.boundOnWindowResize) {
+            window.removeEventListener("resize", this.boundOnWindowResize);
+            this.boundOnWindowResize = null;
         }
     }
 
