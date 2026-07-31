@@ -23,6 +23,7 @@ export class SessionMemory {
     private currentTitle: string = "";
     private trackingId: ReturnType<typeof setInterval> | null = null;
     private visibilityBound = false;
+    private exitBound = false;
     private newEventCallback: (() => void) | null = null;
     private storage: typeof StorageService | null = null;
     private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -44,10 +45,12 @@ export class SessionMemory {
             this.currentTitle = document.title || window.location.href;
         }
         this.installVisibilityListener();
+        this.installExitListener();
         this.resumeTracking();
     }
 
     stop(): void {
+        this.removeExitListener();
         this.removeVisibilityListener();
         this.pauseTracking();
         this.flush();
@@ -80,6 +83,23 @@ export class SessionMemory {
         this.visibilityBound = false;
         document.removeEventListener("visibilitychange", this.onVisibilityChange);
     }
+
+    private installExitListener(): void {
+        if (this.exitBound) return;
+        this.exitBound = true;
+        window.addEventListener("pagehide", this.onPageHide);
+    }
+
+    private removeExitListener(): void {
+        if (!this.exitBound) return;
+        this.exitBound = false;
+        window.removeEventListener("pagehide", this.onPageHide);
+    }
+
+    private onPageHide = (): void => {
+        this.pauseTracking();
+        this.flush();
+    };
 
     private onVisibilityChange = (): void => {
         if (document.hidden) {
