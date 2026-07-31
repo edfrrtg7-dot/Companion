@@ -143,7 +143,10 @@ function renderFinanceSection(container: HTMLElement, onFinanceClick: () => void
     container.appendChild(financeBtn);
 }
 
-function renderSessionSection(container: HTMLElement): () => void {
+function renderSessionSection(container: HTMLElement): { refresh: () => void; destroy: () => void } {
+    // Clear any existing content to prevent DOM duplication on re-render
+    container.innerHTML = "";
+
     const input = document.createElement("input");
     input.type = "text";
     input.className = "ab-session-search";
@@ -218,9 +221,15 @@ function renderSessionSection(container: HTMLElement): () => void {
     // Subscribe to session updates for live refresh while modal is open
     const sessionMemory = getSessionMemory();
     const callback = () => renderList(input.value);
-    const cleanup = sessionMemory.addNewEventCallback(callback);
+    const sessionCleanup = sessionMemory.addNewEventCallback(callback);
 
-    return cleanup;
+    return {
+        refresh: () => renderList(input.value),
+        destroy: () => {
+            sessionCleanup();
+            container.innerHTML = "";
+        }
+    };
 }
 
 function createDivider(): HTMLDivElement {
@@ -361,10 +370,7 @@ function show(onFinanceClick: () => void): void {
             try {
                 const text = await file.text();
                 const count = getSessionMemory().importFromJson(text);
-                if (sessionCleanup) {
-                    sessionCleanup();
-                }
-                sessionCleanup = renderSessionSection(sessionContent);
+                sessionAPI.refresh();
                 await showAlert(`Imported ${count} session entries.`);
             } catch {
                 await showAlert("Invalid session file.", true);
@@ -373,7 +379,7 @@ function show(onFinanceClick: () => void): void {
         });
         importBtn.addEventListener("click", () => fileInput.click());
         sessionActions.appendChild(importBtn);
-        document.body.appendChild(fileInput);
+        sessionActions.appendChild(fileInput);
 
         sessionHeader.appendChild(sessionActions);
         sessionSection.appendChild(sessionHeader);
@@ -392,7 +398,8 @@ function show(onFinanceClick: () => void): void {
         // Render content into sections
         renderDashboard(statusGrid);
         renderActionsSection(actionsContent, onFinanceClick);
-        sessionCleanup = renderSessionSection(sessionContent);
+        const sessionAPI = renderSessionSection(sessionContent);
+        sessionCleanup = sessionAPI.destroy;
         renderFinanceSection(financeContent, onFinanceClick);
     }
 
