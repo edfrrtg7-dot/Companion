@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Companion (Arena)
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      2.1.0
 // @description  Companion application — Arena Runtime
 // @author       Senior Staff JavaScript Engineer
 // @match        https://goldenbride.net/*
@@ -45,6 +45,9 @@
     "../src/companion/storage-adapter.ts"() {
       init_platform_interface();
       LocalStorageAdapter = class {
+        constructor() {
+          __publicField(this, "readyPromise", Promise.resolve());
+        }
         get(key) {
           try {
             return getPlatform().localStorage.getItem(key);
@@ -82,6 +85,11 @@
         constructor() {
           __publicField(this, "cache", /* @__PURE__ */ new Map());
           __publicField(this, "ready", false);
+          __publicField(this, "readyResolver", null);
+          __publicField(this, "readyPromise");
+          this.readyPromise = new Promise((resolve) => {
+            this.readyResolver = resolve;
+          });
           this.hydrate();
         }
         /**
@@ -100,11 +108,14 @@
                 }
               }
               this.ready = true;
+              this.readyResolver?.();
             }).catch(() => {
               this.ready = true;
+              this.readyResolver?.();
             });
           } else {
             this.ready = true;
+            this.readyResolver?.();
           }
         }
         get(key) {
@@ -153,18 +164,28 @@
 
   // ../src/companion/storage-service.ts
   function initStorage() {
-    if (adapter) return;
+    if (adapter) {
+      return adapter.readyPromise;
+    }
     if (getPlatform().chromeStorage) {
       adapter = new ChromeStorageAdapter();
     } else {
       adapter = new LocalStorageAdapter();
     }
+    return adapter.readyPromise;
   }
   function getAdapter() {
     if (!adapter) {
       initStorage();
     }
     return adapter;
+  }
+  async function waitForStorageReady() {
+    if (!adapter) {
+      await initStorage();
+    } else {
+      await adapter.readyPromise;
+    }
   }
   var adapter, StorageService;
   var init_storage_service = __esm({
@@ -296,17 +317,17 @@
     saveErrorHistory(entries);
   }
   function diag(...args) {
-    if (IS_DEV) {
+    if (isDevMode()) {
       console.log(format("INFO" /* INFO */, args), ...args);
     }
   }
   function diagWarn(...args) {
-    if (IS_DEV) {
+    if (isDevMode()) {
       console.warn(format("WARN" /* WARN */, args), ...args);
     }
   }
   function diagError(...args) {
-    if (IS_DEV) {
+    if (isDevMode()) {
       console.error(format("ERROR" /* ERROR */, args), ...args);
     }
     const message = args.map((a) => a instanceof Error ? a.message : String(a)).join(" ");
@@ -314,12 +335,20 @@
     addErrorHistory(message, stack, "diagError");
   }
   function diagDebug(...args) {
-    if (IS_DEV) {
+    if (isDevMode()) {
       console.debug(format("DEBUG" /* DEBUG */, args), ...args);
     }
   }
   function isDevMode() {
-    return IS_DEV;
+    try {
+      return StorageService.get(STORAGE_KEYS.DEV_MODE) !== null;
+    } catch {
+      try {
+        return localStorage.getItem(STORAGE_KEYS.DEV_MODE) !== null;
+      } catch {
+        return false;
+      }
+    }
   }
   function getErrorHistory() {
     return loadErrorHistory();
@@ -353,7 +382,7 @@
   function clearImportHistory() {
     StorageService.remove(STORAGE_KEYS.DIAGNOSTICS_IMPORT_HISTORY);
   }
-  var DiagnosticLevel, MAX_ERROR_HISTORY, IS_DEV, MAX_IMPORT_HISTORY;
+  var DiagnosticLevel, MAX_ERROR_HISTORY, MAX_IMPORT_HISTORY;
   var init_dev = __esm({
     "../src/companion/dev.ts"() {
       init_storage_service();
@@ -366,17 +395,6 @@
         return DiagnosticLevel2;
       })(DiagnosticLevel || {});
       MAX_ERROR_HISTORY = 20;
-      IS_DEV = (() => {
-        try {
-          return StorageService.get(STORAGE_KEYS.DEV_MODE) !== null;
-        } catch {
-          try {
-            return localStorage.getItem(STORAGE_KEYS.DEV_MODE) !== null;
-          } catch {
-            return false;
-          }
-        }
-      })();
       MAX_IMPORT_HISTORY = 20;
     }
   });
@@ -435,7 +453,6 @@
   init_dev();
   var LauncherDiagnostics = class {
     constructor() {
-      __publicField(this, "enabled");
       __publicField(this, "stages", []);
       __publicField(this, "failed", false);
       __publicField(this, "completed", false);
@@ -444,7 +461,9 @@
       __publicField(this, "runtimeName");
       __publicField(this, "globalStateName");
       __publicField(this, "moduleInfo");
-      this.enabled = isDevMode();
+    }
+    get enabled() {
+      return isDevMode();
     }
     setActiveImplementations(platform, runtime, globalState) {
       this.platformName = platform;
@@ -501,7 +520,7 @@
   var VersionManager = class {
     constructor() {
       __publicField(this, "counter", 0);
-      __publicField(this, "history", /* @__PURE__ */ new Map());
+      __publicField(this, "historyMap", /* @__PURE__ */ new Map());
       __publicField(this, "subscribers", /* @__PURE__ */ new Set());
     }
     /**
@@ -523,7 +542,7 @@
         snapshot,
         diff: frozenDiff
       };
-      this.history.set(id, Object.freeze(version));
+      this.historyMap.set(id, Object.freeze(version));
       for (const subscriber of this.subscribers) {
         subscriber(Object.freeze(version));
       }
@@ -541,26 +560,26 @@
      * Get the latest version.
      */
     latest() {
-      const latest = this.history.get(`v${this.counter}`);
+      const latest = this.historyMap.get(`v${this.counter}`);
       return latest;
     }
     /**
      * Get full history as immutable array.
      */
     history() {
-      return Object.freeze(Array.from(this.history.values()));
+      return Object.freeze(Array.from(this.historyMap.values()));
     }
     /**
      * Get a specific version by ID.
      */
     get(id) {
-      return this.history.get(id);
+      return this.historyMap.get(id);
     }
     /**
      * Clear all history and subscribers.
      */
     clear() {
-      this.history.clear();
+      this.historyMap.clear();
       this.subscribers.clear();
       this.counter = 0;
     }
@@ -2133,7 +2152,6 @@
   var MIN_HEIGHT = 200;
   var MAX_WIDTH = 700;
   var MAX_HEIGHT = 600;
-  var COLLAPSED_WIDTH = 330;
   var COLLAPSED_HEIGHT = 44;
   function loadState(storageKey) {
     try {
@@ -2169,6 +2187,8 @@
       __publicField(this, "win");
       // Keyboard handler
       __publicField(this, "boundOnKeyDown", null);
+      // Window resize handler
+      __publicField(this, "boundOnWindowResize", null);
       // Drag state
       __publicField(this, "isDragging", false);
       __publicField(this, "dragStartX", 0);
@@ -2187,6 +2207,10 @@
       __publicField(this, "boundOnResizePointerMove", null);
       __publicField(this, "boundOnResizePointerUp", null);
       __publicField(this, "boundOnResizeBlur", null);
+      __publicField(this, "onWindowResize", () => {
+        if (this.destroyed || !this.root) return;
+        this.recoverPosition();
+      });
       __publicField(this, "onKeyDown", (e) => {
         if (this.destroyed || this.win.hidden) return;
         if (e.key === "Escape") {
@@ -2202,12 +2226,6 @@
         if (this.destroyed) return;
         this.hide();
         this.onClose?.();
-      });
-      __publicField(this, "onHeaderDoubleClick", (e) => {
-        if (this.destroyed) return;
-        const target = e.target;
-        if (target.closest("button")) return;
-        this.toggleCollapse();
       });
       __publicField(this, "onDragPointerDown", (e) => {
         if (this.destroyed || !this.root) return;
@@ -2333,6 +2351,7 @@
       this.onClose = config.onClose;
       const saved = loadState(this.storageKey) ?? this.defaultState;
       this.win = { ...saved };
+      this.recoverPosition();
     }
     // -------------------------------------------------------------------------
     // Initialization — called by subclass after creating DOM
@@ -2343,10 +2362,11 @@
      */
     initWindow(dragHandle, resizeHandle) {
       dragHandle.addEventListener("pointerdown", this.onDragPointerDown);
-      dragHandle.addEventListener("dblclick", this.onHeaderDoubleClick);
       resizeHandle.addEventListener("pointerdown", this.onResizePointerDown);
       this.collapseBtn?.addEventListener("click", this.onCollapseClick);
       this.closeBtn?.addEventListener("click", this.onCloseClick);
+      this.boundOnWindowResize = this.onWindowResize;
+      window.addEventListener("resize", this.boundOnWindowResize);
       if (!this.win.hidden) {
         this.installKeyboardListener();
       }
@@ -2361,6 +2381,7 @@
       this.cancelDrag();
       this.cancelResize();
       this.removeKeyboardListener();
+      this.removeWindowResizeListener();
       this.root?.remove();
       this.root = null;
       this.contentEl = null;
@@ -2377,6 +2398,7 @@
       if (this.destroyed || !this.root) return;
       this.win = { ...this.win, hidden: false };
       this.root.style.display = "";
+      this.recoverPosition();
       this.installKeyboardListener();
       this.persistState();
       if (isDevMode()) diag("[CompanionWindow] show() end");
@@ -2424,6 +2446,7 @@
       this.win = { ...this.win, collapsed: false };
       this.root.classList.remove(`${this.classPrefix}-collapsed`);
       this.updateCollapseButton();
+      this.recoverPosition();
       this.persistState();
       if (isDevMode()) diag("[CompanionWindow] expand() end");
     }
@@ -2441,13 +2464,14 @@
         collapsed: true
       };
       this.contentEl.style.display = "none";
-      this.root.style.width = COLLAPSED_WIDTH + "px";
+      this.root.style.width = this.win.width + "px";
       this.root.style.height = COLLAPSED_HEIGHT + "px";
       this.root.style.minHeight = COLLAPSED_HEIGHT + "px";
-      this.root.style.minWidth = COLLAPSED_WIDTH + "px";
+      this.root.style.minWidth = this.win.width + "px";
       this.root.style.overflow = "hidden";
       this.root.classList.add(`${this.classPrefix}-collapsed`);
       this.updateCollapseButton();
+      this.recoverPosition();
       this.persistState();
     }
     /** Toggle collapse state. */
@@ -2456,6 +2480,51 @@
         this.expand();
       } else {
         this.collapse();
+      }
+    }
+    // -------------------------------------------------------------------------
+    // Position normalization — keep the header and its controls reachable
+    // -------------------------------------------------------------------------
+    /**
+     * Clamp the window position to the current viewport so the header and its
+     * controls stay reachable. The full widget fits in the viewport where
+     * possible; when the widget is larger than the viewport, the header is
+     * kept visible. Returns true when the position was corrected.
+     */
+    normalizePosition() {
+      const viewportWidth = window.innerWidth || 0;
+      const viewportHeight = window.innerHeight || 0;
+      const width = this.win.width;
+      const height = this.win.collapsed ? COLLAPSED_HEIGHT : this.win.height;
+      const maxX = Math.max(0, viewportWidth - width);
+      const maxY = Math.max(0, viewportHeight - height);
+      const x = Math.max(0, Math.min(this.win.x, maxX));
+      const y = Math.max(0, Math.min(this.win.y, maxY));
+      if (x === this.win.x && y === this.win.y) return false;
+      this.win = { ...this.win, x, y };
+      return true;
+    }
+    /** Apply the persisted position to the root element. */
+    applyPosition() {
+      if (!this.root) return;
+      this.root.style.left = this.win.x + "px";
+      this.root.style.top = this.win.y + "px";
+      this.root.style.bottom = "auto";
+      this.root.style.right = "auto";
+    }
+    /**
+     * Normalize the position against the current viewport and persist the
+     * corrected state when a change was required.
+     */
+    recoverPosition() {
+      if (!this.normalizePosition()) return;
+      this.applyPosition();
+      this.persistState();
+    }
+    removeWindowResizeListener() {
+      if (this.boundOnWindowResize) {
+        window.removeEventListener("resize", this.boundOnWindowResize);
+        this.boundOnWindowResize = null;
       }
     }
     // -------------------------------------------------------------------------
@@ -2589,8 +2658,11 @@
       __publicField(this, "unsubscribe");
       __publicField(this, "txContainerEl", null);
       __publicField(this, "bodyRefreshBtn", null);
-      __publicField(this, "headerRefreshBtn", null);
       __publicField(this, "cashDotEl", null);
+      __publicField(this, "cashRefreshEl", null);
+      __publicField(this, "cashIndicatorEl", null);
+      __publicField(this, "shiftBtn", null);
+      __publicField(this, "shiftDropdown", null);
       /** Currently displayed transaction identity keys in order. */
       __publicField(this, "displayedTxIds", []);
       /** Map of identity → row DOM element for reuse. */
@@ -2612,6 +2684,25 @@
           diag("[FinanceWidget] onStateChange:", state.status, "destroyed:", this.destroyed);
         }
         this.render(state);
+      });
+      __publicField(this, "onShiftToggle", () => {
+        if (this.destroyed || !this.shiftDropdown) return;
+        const isOpen = this.shiftDropdown.classList.contains("open");
+        if (isOpen) {
+          this.shiftDropdown.classList.remove("open");
+        } else {
+          this.shiftDropdown.classList.add("open");
+        }
+      });
+      __publicField(this, "onShiftSelect", (event) => {
+        if (this.destroyed) return;
+        const target = event.currentTarget;
+        const shift = target.dataset.shift;
+        if (!shift) return;
+        if (this.shiftDropdown) {
+          this.shiftDropdown.classList.remove("open");
+        }
+        this.controller.setShift(shift);
       });
       __publicField(this, "onBodyRefreshClick", () => {
         if (isDevMode()) diag("[FinanceWidget] onBodyRefreshClick()");
@@ -2650,8 +2741,11 @@
       this.controller.cancelPending();
       this.txContainerEl = null;
       this.bodyRefreshBtn = null;
-      this.headerRefreshBtn = null;
       this.cashDotEl = null;
+      this.cashRefreshEl = null;
+      this.cashIndicatorEl = null;
+      this.shiftBtn = null;
+      this.shiftDropdown = null;
       this.txRowCache.clear();
       this.displayedTxIds = [];
       super.destroy();
@@ -2754,7 +2848,8 @@
         this.createRoot();
       }
       this.updateCashIndicator(state);
-      this.updateHeaderRefreshButton(state.status);
+      this.updateCashRefreshIndicator(state.status);
+      this.updateShiftButton(state.shift);
       if (!this.win.collapsed) {
         if (isDevMode()) {
           diag("[FinanceWidget] render() - not collapsed, calling updateContent()");
@@ -2787,7 +2882,7 @@
       if (saved.collapsed) {
         if (isDevMode()) diag("[FinanceWidget] createRoot() - widget is COLLAPSED");
         root.classList.add(`${this.classPrefix}-collapsed`);
-        root.style.width = "330px";
+        root.style.width = saved.width + "px";
         root.style.height = "44px";
         root.style.overflow = "hidden";
       } else {
@@ -2806,27 +2901,43 @@
       titleText.textContent = "FINANCE";
       title.appendChild(logo);
       title.appendChild(titleText);
-      const cashIndicator = document.createElement("div");
+      const cashIndicator = document.createElement("button");
+      cashIndicator.type = "button";
       cashIndicator.className = `${this.classPrefix}-cash-indicator`;
+      cashIndicator.title = "Refresh";
       const cashIcon = document.createElement("span");
       cashIcon.className = `${this.classPrefix}-cash-icon`;
       cashIcon.textContent = "\u{1F4B0}";
       const cashLabel = document.createElement("span");
       cashLabel.className = `${this.classPrefix}-cash-label`;
       cashLabel.textContent = "CASH";
+      const cashRefresh = document.createElement("span");
+      cashRefresh.className = `${this.classPrefix}-cash-refresh`;
+      cashRefresh.textContent = "\u27F3";
+      this.cashRefreshEl = cashRefresh;
       const cashDot = document.createElement("span");
       cashDot.className = `${this.classPrefix}-cash-dot`;
       cashDot.textContent = "\u25CF";
       this.cashDotEl = cashDot;
       cashIndicator.appendChild(cashIcon);
       cashIndicator.appendChild(cashLabel);
+      cashIndicator.appendChild(cashRefresh);
       cashIndicator.appendChild(cashDot);
       const actions = document.createElement("div");
       actions.className = `${this.classPrefix}-header-actions`;
-      const headerRefreshBtn = document.createElement("button");
-      headerRefreshBtn.className = `${this.classPrefix}-header-refresh-btn`;
-      headerRefreshBtn.title = "Refresh";
-      headerRefreshBtn.textContent = "\u27F3";
+      const shiftBtn = document.createElement("button");
+      shiftBtn.className = `${this.classPrefix}-shift-btn`;
+      shiftBtn.title = "Shift";
+      const shiftDropdown = document.createElement("div");
+      shiftDropdown.className = `${this.classPrefix}-shift-dropdown`;
+      for (const def of FinanceShift.getAllDefinitions()) {
+        const option = document.createElement("button");
+        option.className = `${this.classPrefix}-shift-option`;
+        option.dataset.shift = def.type;
+        option.innerHTML = `<span class="${this.classPrefix}-shift-name">${def.label}</span><span class="${this.classPrefix}-shift-time">${def.timeDisplay}</span>`;
+        option.addEventListener("click", this.onShiftSelect);
+        shiftDropdown.appendChild(option);
+      }
       const collapseBtn = document.createElement("button");
       collapseBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-collapse-btn`;
       collapseBtn.title = "Collapse";
@@ -2835,7 +2946,8 @@
       closeBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-close-btn`;
       closeBtn.title = "Close";
       closeBtn.textContent = "\u2715";
-      actions.appendChild(headerRefreshBtn);
+      actions.appendChild(shiftBtn);
+      actions.appendChild(shiftDropdown);
       actions.appendChild(collapseBtn);
       actions.appendChild(closeBtn);
       dragHandle.appendChild(title);
@@ -2855,9 +2967,12 @@
       this.contentEl = content;
       this.collapseBtn = collapseBtn;
       this.closeBtn = closeBtn;
-      this.headerRefreshBtn = headerRefreshBtn;
       this.cashDotEl = cashDot;
-      headerRefreshBtn.addEventListener("click", this.onHeaderRefreshClick);
+      this.cashIndicatorEl = cashIndicator;
+      this.shiftBtn = shiftBtn;
+      this.shiftDropdown = shiftDropdown;
+      cashIndicator.addEventListener("click", this.onHeaderRefreshClick);
+      shiftBtn.addEventListener("click", this.onShiftToggle);
       this.container.appendChild(root);
       this.initWindow(dragHandle, resizeHandle);
       if (isDevMode()) diag("[FinanceWidget] createRoot() end, contentEl:", !!this.contentEl, "root in DOM:", this.root.isConnected);
@@ -2870,11 +2985,25 @@
       const hasUnviewed = state.unviewedTransactions > 0;
       this.cashDotEl.classList.toggle("pulse", hasUnviewed);
     }
-    updateHeaderRefreshButton(status) {
-      if (!this.headerRefreshBtn) return;
+    updateCashRefreshIndicator(status) {
+      if (!this.cashIndicatorEl || !this.cashRefreshEl) return;
       const isLoading = status === "loading";
-      this.headerRefreshBtn.disabled = isLoading;
-      this.headerRefreshBtn.classList.toggle("spinning", isLoading);
+      this.cashIndicatorEl.disabled = isLoading;
+      this.cashRefreshEl.classList.toggle("spinning", isLoading);
+    }
+    updateShiftButton(shift) {
+      if (!this.shiftBtn || !this.shiftDropdown) return;
+      const def = FinanceShift.getDefinition(shift);
+      this.shiftBtn.textContent = `${def.label} \u25BE`;
+      const options = this.shiftDropdown.querySelectorAll(`.${this.classPrefix}-shift-option`);
+      options.forEach((opt) => {
+        const htmlOpt = opt;
+        if (htmlOpt.dataset.shift === shift) {
+          htmlOpt.classList.add("active");
+        } else {
+          htmlOpt.classList.remove("active");
+        }
+      });
     }
     updateContent(state) {
       if (isDevMode()) {
@@ -3193,8 +3322,9 @@
     overflow: hidden;
 }
 
-/* Collapsed \u2014 JS sets explicit dimensions via COLLAPSED_WIDTH/HEIGHT constants.
-   CSS only hides the resize handle and adjusts header border. */
+/* Collapsed \u2014 JS sets explicit dimensions (height 44px, width = expanded width).
+   CSS makes the header fill the collapsed bar exactly and centers its content,
+   so title, CASH, and actions stay vertically aligned with the expanded layout. */
 .ab-finance.collapsed .ab-finance-resize-handle {
     display: none;
 }
@@ -3202,6 +3332,10 @@
 .ab-finance.collapsed .ab-finance-header {
     border-bottom: none;
     border-radius: 10px;
+    min-height: 0;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 0 12px;
 }
 
 /* Resize handle */
@@ -3292,27 +3426,12 @@
     background: rgba(255,255,255,0.1);
 }
 
-/* Header refresh button */
-.ab-finance-header-refresh-btn {
-    font-size: 16px !important;
-    line-height: 1;
-}
-
-.ab-finance-header-refresh-btn.spinning {
-    animation: ab-finance-spin 0.6s linear infinite;
-}
-
-.ab-finance-header-refresh-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
 @keyframes ab-finance-spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
 
-/* CASH indicator */
+/* CASH indicator \u2014 doubles as the refresh control */
 .ab-finance-cash-indicator {
     display: flex;
     align-items: center;
@@ -3321,8 +3440,23 @@
     border-radius: 4px;
     background: rgba(255, 215, 0, 0.08);
     border: 1px solid rgba(255, 215, 0, 0.15);
-    cursor: default;
+    cursor: pointer;
     flex-shrink: 0;
+    font: inherit;
+    color: inherit;
+    line-height: 1;
+}
+
+.ab-finance-cash-indicator:hover {
+    background: rgba(255, 215, 0, 0.16);
+    border-color: rgba(255, 215, 0, 0.3);
+}
+
+.ab-finance-cash-indicator:disabled {
+    opacity: 0.5;
+    cursor: default;
+    background: rgba(255, 215, 0, 0.08);
+    border-color: rgba(255, 215, 0, 0.15);
 }
 
 .ab-finance-cash-icon {
@@ -3336,6 +3470,21 @@
     color: #FFD700;
     letter-spacing: 0.5px;
     text-transform: uppercase;
+}
+
+.ab-finance-cash-refresh {
+    font-size: 12px;
+    line-height: 1;
+    color: rgba(255, 215, 0, 0.6);
+    transition: color 0.15s ease;
+}
+
+.ab-finance-cash-indicator:hover .ab-finance-cash-refresh {
+    color: #FFD700;
+}
+
+.ab-finance-cash-refresh.spinning {
+    animation: ab-finance-spin 0.6s linear infinite;
 }
 
 .ab-finance-cash-dot {
@@ -3353,6 +3502,86 @@
 @keyframes ab-finance-gold-pulse {
     0%, 100% { opacity: 0.4; transform: scale(0.8); }
     50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* Shift selector */
+.ab-finance-shift-btn {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.5);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+.ab-finance-shift-btn:hover {
+    color: #E0E0E0;
+    background: rgba(255,255,255,0.1);
+}
+
+.ab-finance-shift-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    background: #1F2235;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 4px;
+    z-index: 10;
+    min-width: 160px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.ab-finance-shift-dropdown.open {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.ab-finance-shift-option {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+    text-align: left;
+    color: #E0E0E0;
+    transition: all 0.15s ease;
+    width: 100%;
+}
+
+.ab-finance-shift-option:hover {
+    background: rgba(255,255,255,0.08);
+}
+
+.ab-finance-shift-option.active {
+    background: #2F6BFF;
+    border-color: #2F6BFF;
+    color: #FFFFFF;
+}
+
+.ab-finance-shift-option.active:hover {
+    background: #4A82FF;
+}
+
+.ab-finance-shift-name {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.ab-finance-shift-time {
+    font-size: 9px;
+    opacity: 0.7;
 }
 
 /* Collapse button */
@@ -4922,10 +5151,52 @@
       this.widget.show();
       if (isDevMode()) diag("[FinanceModule] widget shown");
     }
+    /**
+     * Restore the widget to its persisted visibility state.
+     * Creates the widget if needed but never forces it visible,
+     * so a persisted `hidden: true` preference is respected at startup.
+     */
+    restoreVisibility() {
+      if (!this.initialized || this.disposed) return;
+      if (!this.controller) return;
+      if (!this.widget) {
+        this.widget = new FinanceWidget(this.controller);
+      }
+      if (isDevMode()) diag("[FinanceModule] widget visibility restored");
+    }
     close() {
       if (this.disposed) return;
       this.widget?.hide();
       if (isDevMode()) diag("[FinanceModule] widget hidden");
+    }
+    /**
+     * Destroy the current widget (if any) and create a fresh one backed by
+     * the existing controller, then show it. Preserves persisted geometry
+     * and off-screen recovery. The controller is retained — no state reset.
+     */
+    restartWidgetAndShow() {
+      if (!this.initialized || this.disposed) return;
+      if (!this.controller) return;
+      if (this.widget) {
+        this.widget.destroy();
+        this.widget = null;
+      }
+      this.widget = new FinanceWidget(this.controller);
+      this.widget.show();
+      if (isDevMode()) diag("[FinanceModule] widget restarted and shown");
+    }
+    /**
+     * Toggle the widget between shown and hidden states. When showing,
+     * always constructs a fresh widget instance to guarantee a clean state
+     * (DOM, listeners, subscriptions) while preserving the controller and
+     * persisted geometry.
+     */
+    toggle() {
+      if (this.isOpen) {
+        this.close();
+      } else {
+        this.restartWidgetAndShow();
+      }
     }
     get isOpen() {
       return this.widget?.isVisible ?? false;
@@ -5323,72 +5594,6 @@
     justify-content: center;
 }
 
-/* \u2500\u2500 Session list \u2500\u2500 */
-.ab-session-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-.ab-session-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 10px;
-    border-radius: 6px;
-    background: rgba(255,255,255,0.03);
-    transition: background 0.15s;
-    gap: 12px;
-}
-.ab-session-item:hover {
-    background: rgba(255,255,255,0.08);
-}
-.ab-session-title {
-    font-size: 13px;
-    color: var(--ab-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-    min-width: 0;
-}
-.ab-session-time {
-    font-size: 11px;
-    color: var(--ab-text-dim);
-    white-space: nowrap;
-    flex-shrink: 0;
-}
-.ab-session-empty {
-    font-size: 13px;
-    color: var(--ab-text-dim);
-    padding: 8px 0;
-}
-
-.ab-session-search {
-    width: 100%;
-    padding: 8px 10px;
-    border-radius: 6px;
-    border: 1px solid var(--ab-border);
-    background: rgba(255,255,255,0.05);
-    color: var(--ab-text);
-    font-size: 13px;
-    font-family: var(--ab-font);
-    outline: none;
-    box-sizing: border-box;
-    transition: border-color 0.15s;
-}
-.ab-session-search::placeholder {
-    color: var(--ab-text-dim);
-}
-.ab-session-search:focus {
-    border-color: var(--ab-accent);
-}
-
-.ab-session-highlight {
-    background: rgba(47,107,255,0.3);
-    border-radius: 2px;
-    padding: 0 1px;
-}
-
 /* \u2500\u2500 Buttons \u2500\u2500 */
 .ab-btn {
     background: rgba(255,255,255,0.05);
@@ -5426,24 +5631,6 @@
     color: #fca5a5;
 }
 .ab-btn.danger:hover { background: rgba(239,68,68,0.3); }
-
-.ab-btn-sm {
-    padding: 6px 10px;
-    font-size: 12px;
-    gap: 6px;
-}
-
-/* \u2500\u2500 Section header with actions \u2500\u2500 */
-.ab-section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-}
-.ab-section-actions {
-    display: flex;
-    gap: 6px;
-}
 
 /* \u2500\u2500 Diagnostics \u2500\u2500 */
 .ab-diag-group { margin-bottom: 16px; }
@@ -5771,198 +5958,12 @@ Snippet 3
     });
   }
 
-  // ../src/companion/session-memory.ts
-  init_storage_keys();
-  var MAX_SESSION_EVENTS = 100;
-  var TRACK_INTERVAL_MS = 1e3;
-  var SAVE_DEBOUNCE_MS = 300;
-  var SessionMemory = class {
-    constructor(storage) {
-      __publicField(this, "events", []);
-      __publicField(this, "currentUrl", "");
-      __publicField(this, "currentTitle", "");
-      __publicField(this, "trackingId", null);
-      __publicField(this, "newEventCallback", null);
-      __publicField(this, "storage", null);
-      __publicField(this, "saveTimer", null);
-      __publicField(this, "dirty", false);
-      this.storage = storage ?? null;
-    }
-    start() {
-      if (this.storage) {
-        this.load();
-      }
-      const latestUrl = this.events.length > 0 ? this.events[0].url : "";
-      if (window.location.href !== latestUrl) {
-        this.recordCurrent();
-      } else {
-        this.currentUrl = window.location.href;
-        this.currentTitle = document.title || window.location.href;
-      }
-      this.trackingId = setInterval(() => this.checkPageChange(), TRACK_INTERVAL_MS);
-    }
-    stop() {
-      if (this.trackingId !== null) {
-        clearInterval(this.trackingId);
-        this.trackingId = null;
-      }
-      if (this.saveTimer !== null) {
-        clearTimeout(this.saveTimer);
-        this.saveTimer = null;
-      }
-      this.flush();
-    }
-    getEvents() {
-      return this.events;
-    }
-    getRecentCount() {
-      return this.events.length;
-    }
-    setNewEventCallback(callback) {
-      this.newEventCallback = callback;
-    }
-    /** Export session as pretty-printed JSON. */
-    exportToJson() {
-      let createdAt = Date.now();
-      if (this.storage) {
-        const existing = this.storage.get(STORAGE_KEYS.SESSION_MEMORY);
-        if (existing) {
-          try {
-            const prev = JSON.parse(existing);
-            if (prev && typeof prev === "object" && typeof prev.createdAt === "number") {
-              createdAt = prev.createdAt;
-            }
-          } catch {
-          }
-        }
-      }
-      const data = { version: 1, createdAt, updatedAt: Date.now(), events: this.events };
-      return JSON.stringify(data, null, 2);
-    }
-    /** Import session from JSON string. Returns number of imported events. */
-    importFromJson(json) {
-      const data = JSON.parse(json);
-      if (!data || typeof data !== "object") throw new Error("Invalid JSON structure");
-      const version = data.version;
-      if (version !== 1) throw new Error(`Unsupported version: ${version}`);
-      const events = data.events;
-      if (!Array.isArray(events)) throw new Error("Missing events array");
-      const valid = [];
-      for (const e of events) {
-        if (e && typeof e.url === "string" && typeof e.title === "string" && typeof e.timestamp === "number") {
-          valid.push(e);
-        }
-      }
-      this.events = valid.slice(0, MAX_SESSION_EVENTS);
-      this.dirty = true;
-      if (this.events.length > 0) {
-        this.currentUrl = this.events[0].url;
-        this.currentTitle = this.events[0].title;
-      } else {
-        this.currentUrl = "";
-        this.currentTitle = "";
-      }
-      this.newEventCallback?.();
-      this.flush();
-      return this.events.length;
-    }
-    load() {
-      try {
-        const raw = this.storage.get(STORAGE_KEYS.SESSION_MEMORY);
-        if (!raw) return;
-        const data = JSON.parse(raw);
-        if (!data || typeof data !== "object" || !Array.isArray(data.events)) {
-          this.clearStorage();
-          return;
-        }
-        const valid = [];
-        for (const e of data.events) {
-          if (e && typeof e.url === "string" && typeof e.title === "string" && typeof e.timestamp === "number") {
-            valid.push(e);
-          }
-        }
-        this.events = valid.slice(0, MAX_SESSION_EVENTS);
-        this.dirty = false;
-        if (this.events.length > 0) {
-          this.currentUrl = this.events[0].url;
-          this.currentTitle = this.events[0].title;
-        }
-      } catch {
-        this.clearStorage();
-      }
-    }
-    flush() {
-      if (!this.storage || !this.dirty) return;
-      this.save();
-    }
-    save() {
-      if (!this.storage) return;
-      let createdAt = Date.now();
-      const existing = this.storage.get(STORAGE_KEYS.SESSION_MEMORY);
-      if (existing) {
-        try {
-          const prev = JSON.parse(existing);
-          if (prev && typeof prev === "object" && typeof prev.createdAt === "number") {
-            createdAt = prev.createdAt;
-          }
-        } catch {
-        }
-      }
-      const data = { createdAt, updatedAt: Date.now(), events: this.events };
-      this.storage.set(STORAGE_KEYS.SESSION_MEMORY, JSON.stringify(data));
-      this.dirty = false;
-    }
-    scheduleSave() {
-      if (!this.storage) return;
-      if (!this.dirty) {
-        this.dirty = true;
-      }
-      if (this.saveTimer !== null) {
-        clearTimeout(this.saveTimer);
-      }
-      this.saveTimer = setTimeout(() => {
-        this.save();
-        this.saveTimer = null;
-      }, SAVE_DEBOUNCE_MS);
-    }
-    clearStorage() {
-      this.storage?.remove(STORAGE_KEYS.SESSION_MEMORY);
-      this.events = [];
-      this.dirty = false;
-    }
-    checkPageChange() {
-      if (window.location.href !== this.currentUrl) {
-        this.recordCurrent();
-      }
-    }
-    recordCurrent() {
-      const url = window.location.href;
-      const title = document.title || url;
-      this.currentUrl = url;
-      this.currentTitle = title;
-      const event = { url, title, timestamp: Date.now() };
-      this.events.unshift(event);
-      if (this.events.length > MAX_SESSION_EVENTS) {
-        this.events.pop();
-      }
-      this.newEventCallback?.();
-      this.scheduleSave();
-    }
-  };
-  var currentInstance2;
-  function getSessionMemory() {
-    if (!currentInstance2) {
-      currentInstance2 = new SessionMemory();
-    }
-    return currentInstance2;
-  }
-  function setSessionMemory(instance) {
-    currentInstance2 = instance;
-  }
+  // ../src/companion/app-version.ts
+  var APP_VERSION = "v2.1.0";
 
   // ../src/companion/companion-modal.ts
-  var COMPANION_VERSION = "v2.0.0";
   var modalOverlay = null;
+  var fadingOverlay = null;
   function renderActionsSection(container, onFinanceClick) {
     const row1 = document.createElement("div");
     row1.className = "ab-actions-row";
@@ -6076,67 +6077,6 @@ Snippet 3
     financeBtn.addEventListener("click", onFinanceClick);
     container.appendChild(financeBtn);
   }
-  function renderSessionSection(container) {
-    const input = document.createElement("input");
-    input.type = "text";
-    input.className = "ab-session-search";
-    input.placeholder = "Search pages...";
-    container.appendChild(input);
-    const listEl = document.createElement("div");
-    listEl.className = "ab-session-list";
-    container.appendChild(listEl);
-    function formatTime(ts) {
-      const diff = Date.now() - ts;
-      if (diff < 6e4) return "just now";
-      if (diff < 36e5) return `${Math.floor(diff / 6e4)}m ago`;
-      return `${Math.floor(diff / 36e5)}h ago`;
-    }
-    function highlight(text, query) {
-      if (!query) return text;
-      const idx = text.toLowerCase().indexOf(query.toLowerCase());
-      if (idx === -1) return text;
-      const before = text.slice(0, idx);
-      const match = text.slice(idx, idx + query.length);
-      const after = text.slice(idx + query.length);
-      return `${before}<mark class="ab-session-highlight">${match}</mark>${after}`;
-    }
-    function renderList(query) {
-      const events = getSessionMemory().getEvents();
-      const lower = query.toLowerCase().trim();
-      const filtered = lower ? events.filter((e) => e.title.toLowerCase().includes(lower) || e.url.toLowerCase().includes(lower)) : events;
-      listEl.innerHTML = "";
-      if (filtered.length === 0) {
-        const empty = document.createElement("div");
-        empty.className = "ab-session-empty";
-        empty.textContent = lower ? "No matching pages." : "No pages visited yet.";
-        listEl.appendChild(empty);
-        return;
-      }
-      for (const event of filtered) {
-        const item = document.createElement("div");
-        item.className = "ab-session-item";
-        const title = document.createElement("span");
-        title.className = "ab-session-title";
-        if (lower) {
-          title.innerHTML = highlight(event.title, query);
-        } else {
-          title.textContent = event.title;
-        }
-        item.appendChild(title);
-        const time = document.createElement("span");
-        time.className = "ab-session-time";
-        time.textContent = formatTime(event.timestamp);
-        item.appendChild(time);
-        item.addEventListener("click", () => {
-          window.location.href = event.url;
-        });
-        item.style.cursor = "pointer";
-        listEl.appendChild(item);
-      }
-    }
-    renderList("");
-    input.addEventListener("input", () => renderList(input.value));
-  }
   function createDivider() {
     const div = document.createElement("div");
     div.style.borderTop = "1px solid var(--ab-border)";
@@ -6159,6 +6099,10 @@ Snippet 3
     if (e.target === modalOverlay) handleClose();
   }
   function show(onFinanceClick) {
+    if (fadingOverlay) {
+      fadingOverlay.remove();
+      fadingOverlay = null;
+    }
     if (modalOverlay) return;
     injectStyles();
     const overlay = document.createElement("div");
@@ -6172,7 +6116,7 @@ Snippet 3
                     <span class="ab-header-title">Companion</span>
                 </div>
                 <div class="ab-header-right">
-                    <span class="ab-header-version">${COMPANION_VERSION}</span>
+                    <span class="ab-header-version">${APP_VERSION}</span>
                     <div class="ab-close-icon" id="ab-main-close">
                         <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
                     </div>
@@ -6201,59 +6145,6 @@ Snippet 3
       const actionsContent = document.createElement("div");
       actionsSection.appendChild(actionsContent);
       content.appendChild(actionsSection);
-      const sessionSection = document.createElement("div");
-      sessionSection.className = "ab-section";
-      const sessionHeader = document.createElement("div");
-      sessionHeader.className = "ab-section-header";
-      sessionHeader.appendChild(createSectionTitle("Session"));
-      const sessionActions = document.createElement("div");
-      sessionActions.className = "ab-section-actions";
-      const exportBtn = document.createElement("button");
-      exportBtn.className = "ab-btn ab-btn-sm";
-      exportBtn.title = "Export session to JSON file";
-      exportBtn.innerHTML = `<svg style="width:14px;height:14px;fill:currentColor" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg> Export`;
-      exportBtn.addEventListener("click", () => {
-        const json = getSessionMemory().exportToJson();
-        const blob = new Blob([json], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `companion-session-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.json`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      });
-      sessionActions.appendChild(exportBtn);
-      const importBtn = document.createElement("button");
-      importBtn.className = "ab-btn ab-btn-sm";
-      importBtn.title = "Import session from JSON file";
-      importBtn.innerHTML = `<svg style="width:14px;height:14px;fill:currentColor" viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5z"/></svg> Import`;
-      const fileInput = document.createElement("input");
-      fileInput.type = "file";
-      fileInput.accept = ".json";
-      fileInput.style.display = "none";
-      fileInput.addEventListener("change", async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        try {
-          const text = await file.text();
-          const count = getSessionMemory().importFromJson(text);
-          renderSessionSection(sessionContent);
-          await showAlert(`Imported ${count} session entries.`);
-        } catch {
-          await showAlert("Invalid session file.", true);
-        }
-        fileInput.value = "";
-      });
-      importBtn.addEventListener("click", () => fileInput.click());
-      sessionActions.appendChild(importBtn);
-      document.body.appendChild(fileInput);
-      sessionHeader.appendChild(sessionActions);
-      sessionSection.appendChild(sessionHeader);
-      const sessionContent = document.createElement("div");
-      sessionSection.appendChild(sessionContent);
-      content.appendChild(sessionSection);
       const financeSection = document.createElement("div");
       financeSection.className = "ab-section";
       financeSection.appendChild(createSectionTitle("Finance"));
@@ -6262,7 +6153,6 @@ Snippet 3
       content.appendChild(financeSection);
       renderDashboard(statusGrid);
       renderActionsSection(actionsContent, onFinanceClick);
-      renderSessionSection(sessionContent);
       renderFinanceSection(financeContent, onFinanceClick);
     }
     requestAnimationFrame(() => overlay.classList.add("visible"));
@@ -6276,7 +6166,13 @@ Snippet 3
     document.removeEventListener("keydown", onKeyDown);
     modalOverlay.classList.remove("visible");
     const overlay = modalOverlay;
-    setTimeout(() => overlay?.remove(), 150);
+    fadingOverlay = overlay;
+    setTimeout(() => {
+      overlay?.remove();
+      if (fadingOverlay === overlay) {
+        fadingOverlay = null;
+      }
+    }, 150);
     modalOverlay = null;
     diag("CompanionModal hidden");
     CompanionModal.getInstance().onVisibilityChange?.();
@@ -6435,35 +6331,11 @@ Snippet 3
     transform: scale(0.9);
     transition-duration: 0.05s;
 }
-
-#ab-companion-badge {
-    position: absolute;
-    top: -4px;
-    right: -4px;
-    min-width: 18px;
-    height: 18px;
-    border-radius: 9px;
-    background: #FF3B30;
-    color: #FFFFFF;
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 18px;
-    text-align: center;
-    padding: 0 4px;
-    box-sizing: border-box;
-    pointer-events: none;
-    display: none;
-}
-
-#ab-companion-badge.visible {
-    display: block;
-}
 `;
   var _CompanionApp = class _CompanionApp {
     constructor(moduleManager) {
       __publicField(this, "moduleManager");
       __publicField(this, "launcher", null);
-      __publicField(this, "badge", null);
       __publicField(this, "started", false);
       if (_CompanionApp.instance) {
         throw new Error("CompanionApp is a singleton. Use CompanionApp.getInstance() or check existing instance.");
@@ -6482,25 +6354,23 @@ Snippet 3
     /** Start the Companion application and create the launcher UI. */
     start() {
       if (this.started) return;
-      this.started = true;
       this.injectStyles();
       this.createUI();
+      this.started = true;
       diag("initialized");
     }
     // -------------------------------------------------------------------------
     // UI
     // -------------------------------------------------------------------------
     createUI() {
-      if (!document.body) return;
+      if (!document.body) {
+        throw new Error("CompanionApp.createUI(): document.body not available");
+      }
       const btn = document.createElement("button");
       btn.id = "ab-companion-launcher";
       btn.title = "Companion";
       btn.innerHTML = COMPANION_LOGO_WHITE_SVG;
       btn.addEventListener("click", () => this.onLauncherClick());
-      const badge = document.createElement("div");
-      badge.id = "ab-companion-badge";
-      btn.appendChild(badge);
-      this.badge = badge;
       document.body.appendChild(btn);
       this.launcher = btn;
       getLauncherDiagnostics().track("launcher mounted", true);
@@ -6513,23 +6383,11 @@ Snippet 3
       getLauncherDiagnostics().track("launcher visible", true);
       const modal = CompanionModal.getInstance();
       modal.setOnVisibilityChange(() => this.syncLauncherState());
-      getSessionMemory().setNewEventCallback(() => this.updateBadge());
-      this.updateBadge();
     }
     syncLauncherState() {
       if (!this.launcher) return;
       const modal = CompanionModal.getInstance();
       this.launcher.classList.toggle("active", modal.isVisible);
-    }
-    updateBadge() {
-      if (!this.badge) return;
-      const count = getSessionMemory().getRecentCount();
-      if (count > 0) {
-        this.badge.textContent = count > 99 ? "99+" : String(count);
-        this.badge.classList.add("visible");
-      } else {
-        this.badge.classList.remove("visible");
-      }
     }
     onLauncherClick() {
       CompanionModal.getInstance().toggle();
@@ -6586,6 +6444,7 @@ Snippet 3
   }
 
   // ../src/companion/bootstrap-coordinator.ts
+  init_storage_service();
   var BootstrapCoordinator = class {
     constructor(runtime, globalState, diagnostics, manager, financeModule, modal, app) {
       this.runtime = runtime;
@@ -6619,6 +6478,7 @@ Snippet 3
       }
     }
     async run() {
+      await waitForStorageReady();
       this.diagnostics.track("main() started", true);
       this.diagnostics.track("document ready", true);
       if (isDevMode()) diag("[bootstrap] createApp() start");
@@ -6636,14 +6496,14 @@ Snippet 3
       setRegisteredModules(this.manager.getAll().map((m) => m.id));
       this.diagnostics.track("root container created", true);
       this.modal.setFinanceClickHandler(() => {
-        if (isDevMode()) diag("[bootstrap] Finance button clicked, opening FinanceModule");
-        this.financeModule?.open();
+        if (isDevMode()) diag("[bootstrap] Finance button clicked, toggling FinanceModule");
+        this.financeModule?.toggle();
       });
       this.diagnostics.track("launcher created", true);
       diag("Starting CompanionApp");
       this.app.start();
-      if (isDevMode()) diag("[bootstrap] Auto-launching Finance module");
-      this.financeModule?.open();
+      if (isDevMode()) diag("[bootstrap] Restoring Finance module visibility");
+      this.financeModule?.restoreVisibility();
       exposeDiagnostics();
       this.diagnostics.track("initialization completed", true);
       if (isDevMode()) diag("[bootstrap] createApp() end");
@@ -6664,7 +6524,7 @@ Snippet 3
   };
 
   // ../src/companion/create-composition.ts
-  function createComposition(platform, runtime, globalState) {
+  async function createComposition(platform, runtime, globalState) {
     setPlatform(platform);
     setRuntimeEnvironment(runtime);
     setGlobalState(globalState);
@@ -6675,10 +6535,7 @@ Snippet 3
       runtime.constructor.name,
       globalState.constructor.name
     );
-    initStorage();
-    const sessionMemory = new SessionMemory(StorageService);
-    setSessionMemory(sessionMemory);
-    sessionMemory.start();
+    await initStorage();
     const manager = new ModuleManager();
     const financeModule = new FinanceModule();
     manager.register(financeModule);
@@ -6823,12 +6680,13 @@ Snippet 3
   };
 
   // ../src/companion/arena-bootstrap.ts
-  var coordinator = createComposition(
+  var coordinatorPromise = createComposition(
     new ArenaPlatform(),
     new ArenaRuntimeEnvironment(),
     new ChromeGlobalState()
   );
-  function bootstrap() {
+  async function bootstrap() {
+    const coordinator = await coordinatorPromise;
     coordinator.start();
   }
   if (!getRuntimeEnvironment().isExtension()) {

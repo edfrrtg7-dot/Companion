@@ -9,6 +9,9 @@
  * - dispose() may be called once. Subsequent calls are no-ops.
  * - After dispose(), internal references are nulled. open()/close() become no-ops.
  * - Re-initialization after dispose() is not supported.
+ * - toggle() when hidden destroys the previous widget (if any) and constructs
+ *   exactly one new widget backed by the existing controller, preserving
+ *   persisted geometry and off-screen recovery. Controller identity unchanged.
  */
 
 import { CompanionModule, ModuleId, ModuleMetadata, ModuleCapabilities } from "./platform";
@@ -275,14 +278,35 @@ export class FinanceModule implements CompanionModule<FinanceSnapshot, FinanceDi
     }
 
     /**
-     * Toggle the widget between shown and hidden states, creating it on
-     * first use. Full lifecycle control from the launcher button.
+     * Destroy the current widget (if any) and create a fresh one backed by
+     * the existing controller, then show it. Preserves persisted geometry
+     * and off-screen recovery. The controller is retained — no state reset.
+     */
+    restartWidgetAndShow(): void {
+        if (!this.initialized || this.disposed) return;
+        if (!this.controller) return;
+
+        if (this.widget) {
+            this.widget.destroy();
+            this.widget = null;
+        }
+
+        this.widget = new FinanceWidget(this.controller);
+        this.widget.show();
+        if (isDevMode()) diag("[FinanceModule] widget restarted and shown");
+    }
+
+    /**
+     * Toggle the widget between shown and hidden states. When showing,
+     * always constructs a fresh widget instance to guarantee a clean state
+     * (DOM, listeners, subscriptions) while preserving the controller and
+     * persisted geometry.
      */
     toggle(): void {
         if (this.isOpen) {
             this.close();
         } else {
-            this.open();
+            this.restartWidgetAndShow();
         }
     }
 
