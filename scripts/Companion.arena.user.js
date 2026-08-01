@@ -2745,7 +2745,11 @@
       if (isDevMode()) {
         diag("[FinanceWidget] after initial render, contentEl:", this.contentEl?.childElementCount, "isConnected:", this.contentEl?.isConnected);
       }
-      if (isDevMode()) {
+      if (!this.win.collapsed) {
+        this.firstExpandDone = true;
+        if (isDevMode()) diag("[FinanceWidget] restored expanded, triggering refresh");
+        this.controller.refresh();
+      } else if (isDevMode()) {
         diag("[FinanceWidget] constructor end, deferred refresh to first expand");
       }
     }

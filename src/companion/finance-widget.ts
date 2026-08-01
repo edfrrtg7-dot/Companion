@@ -125,7 +125,15 @@ export class FinanceWidget extends CompanionWindow {
         if (isDevMode()) {
             diag("[FinanceWidget] after initial render, contentEl:", this.contentEl?.childElementCount, "isConnected:", this.contentEl?.isConnected);
         }
-        if (isDevMode()) {
+        if (!this.win.collapsed) {
+            // Restored in the expanded state (persisted after a previous
+            // session). expand() only refreshes on a collapsed->expanded
+            // transition, so trigger the initial refresh here to populate the
+            // body without requiring a manual refresh.
+            this.firstExpandDone = true;
+            if (isDevMode()) diag("[FinanceWidget] restored expanded, triggering refresh");
+            this.controller.refresh();
+        } else if (isDevMode()) {
             diag("[FinanceWidget] constructor end, deferred refresh to first expand");
         }
     }
