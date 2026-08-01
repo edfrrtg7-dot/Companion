@@ -23,8 +23,7 @@ import { txIdentity } from "./finance-controller";
 import { ShiftType } from "./finance-shift";
 import { FINANCE_WIDGET_CSS } from "./finance-widget.css";
 import { setFinanceController } from "./companion-diagnostics-collectors";
-import { StorageKey } from "./storage-keys";
-import { diag, diagError, isDevMode } from "./dev";
+import { diag, isDevMode } from "./dev";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,7 +51,6 @@ export interface FinanceDiff {
 // ---------------------------------------------------------------------------
 
 const FINANCE_MODULE_ID: ModuleId = "finance";
-const FINANCE_STORAGE_KEY = "ab-finance-state" as StorageKey;
 
 export class FinanceModule implements CompanionModule<FinanceSnapshot, FinanceDiff>, InitializableModule<FinanceSnapshot, FinanceDiff> {
     readonly id: ModuleId = FINANCE_MODULE_ID;
@@ -103,16 +101,6 @@ export class FinanceModule implements CompanionModule<FinanceSnapshot, FinanceDi
 
         this.injectStyles();
 
-        // Attempt to restore previously persisted state
-        try {
-            const saved = await this.platformServices.storage.get<FinanceSnapshot>(FINANCE_STORAGE_KEY);
-            if (saved) {
-                if (isDevMode()) diag("[FinanceModule] loaded persisted state:", saved.shift, saved.status);
-            }
-        } catch (err) {
-            diagError("[FinanceModule] failed to load persisted state:", err);
-        }
-
         this.controller = new FinanceController();
         setFinanceController(this.controller);
 
@@ -122,13 +110,6 @@ export class FinanceModule implements CompanionModule<FinanceSnapshot, FinanceDi
 
         // Capture initial state as first version
         this.lastSnapshot = this.createSnapshot();
-
-        // Persist the initial snapshot for cross-session state continuity
-        try {
-            await this.platformServices.storage.set(FINANCE_STORAGE_KEY, this.lastSnapshot);
-        } catch (err) {
-            diagError("[FinanceModule] failed to persist initial state:", err);
-        }
 
         this.platformServices.versionManager.createVersion(
             this.id,
@@ -159,15 +140,6 @@ export class FinanceModule implements CompanionModule<FinanceSnapshot, FinanceDi
         if (this.disposed) return;
 
         if (isDevMode()) diag("[FinanceModule] dispose()");
-
-        // Persist final state before teardown
-        if (this.platformServices && this.lastSnapshot) {
-            try {
-                await this.platformServices.storage.set(FINANCE_STORAGE_KEY, this.lastSnapshot);
-            } catch (err) {
-                diagError("[FinanceModule] failed to persist state on dispose:", err);
-            }
-        }
 
         if (this.unsubscribeController) {
             this.unsubscribeController();

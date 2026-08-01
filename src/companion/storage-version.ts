@@ -4,14 +4,16 @@
  * Tracks the storage schema version.
  * Enables migration pipeline when schema changes.
  *
- * Infrastructure only — no migrations yet.
+ * Version history:
+ *   - 1: initial schema (Finance shift persisted under FINANCE_STATE)
+ *   - 2: unified Finance widget state (shift merged into FINANCE_WIDGET_STATE)
  */
 
 import { StorageService } from "./storage-service";
 import { STORAGE_KEYS } from "./storage-keys";
 
 /** Current storage schema version. */
-export const STORAGE_VERSION = 1;
+export const STORAGE_VERSION = 2;
 
 /** Key used to persist the storage version. */
 const VERSION_KEY = STORAGE_KEYS.STORAGE_VERSION;

@@ -28,7 +28,7 @@
  *   - Window management (see CompanionWindow)
  */
 
-import { CompanionWindow, CompanionWindowConfig } from "./companion-window";
+import { CompanionWindow, CompanionWindowConfig, WindowState } from "./companion-window";
 import { FinanceController, FinanceState, FinanceStateListener, type FinanceStatus, txIdentity } from "./finance-controller";
 import { FinanceTransaction } from "./finance-mapper";
 import { FinanceShift, ShiftType } from "./finance-shift";
@@ -160,6 +160,20 @@ export class FinanceWidget extends CompanionWindow {
     /** Hide the widget. */
     hide(): void {
         super.hide();
+    }
+
+    /**
+     * Persist window state together with the current shift, keeping the
+     * unified finance widget state (geometry + shift) under one storage key.
+     * Guarded against the base-constructor window where the controller is
+     * not yet assigned.
+     */
+    protected override persistState(): void {
+        const shift = this.controller?.getCurrentShift();
+        if (shift) {
+            this.win = { ...this.win, shift } as WindowState;
+        }
+        super.persistState();
     }
 
     /** Expand the widget and trigger initial refresh on first expand. */

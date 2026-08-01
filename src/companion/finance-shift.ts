@@ -87,13 +87,21 @@ import { STORAGE_KEYS } from "./storage-keys";
 
 // ---------------------------------------------------------------------------
 
-const STORAGE_KEY = STORAGE_KEYS.FINANCE_STATE;
+const STORAGE_KEY = STORAGE_KEYS.FINANCE_WIDGET_STATE;
+
+/** Parsed unified Finance widget state — only the shift field is consumed here. */
+interface StoredFinanceState {
+    readonly shift?: string;
+    [key: string]: unknown;
+}
 
 function loadShift(): ShiftType | null {
     try {
         const raw = StorageService.get(STORAGE_KEY);
-        if (raw && isShiftType(raw)) {
-            return raw;
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as StoredFinanceState;
+        if (parsed && typeof parsed === "object" && isShiftType(parsed.shift)) {
+            return parsed.shift;
         }
     } catch {
         // Storage unavailable or corrupted
@@ -103,7 +111,22 @@ function loadShift(): ShiftType | null {
 
 function saveShift(shift: ShiftType): void {
     try {
-        StorageService.set(STORAGE_KEY, shift);
+        // Update only the shift field of the unified widget state, preserving
+        // all other persisted fields (geometry, collapsed, hidden).
+        const raw = StorageService.get(STORAGE_KEY);
+        let next: Record<string, unknown> = {};
+        if (raw) {
+            try {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === "object") {
+                    next = { ...parsed };
+                }
+            } catch {
+                // Corrupted value — start from an empty object
+            }
+        }
+        next.shift = shift;
+        StorageService.set(STORAGE_KEY, JSON.stringify(next));
     } catch {
         // Storage full or unavailable
     }

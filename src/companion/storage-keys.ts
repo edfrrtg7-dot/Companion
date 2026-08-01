@@ -12,17 +12,23 @@ export const STORAGE_KEYS = {
     /** Finance widget window state (position, size, collapsed, hidden). */
     COMPANION_WINDOW_STATE: "ab-companion-window-state",
 
-    /** Finance widget window state (legacy key for migration). */
+    /** Finance widget unified state (position, size, collapsed, hidden, shift). Single authoritative source. */
     FINANCE_WIDGET_STATE: "ab-finance-widget-state",
+
+    /** Legacy Finance state key — held the shift preset before unification. Removed by migration v1→v2. */
+    FINANCE_STATE: "ab-finance-state",
+
+    /** Legacy AgencyBooster widget state key (pre-Companion). Migrated to FINANCE_WIDGET_STATE. */
+    LEGACY_FINANCE_WIDGET: "agencybooster-finance-widget",
+
+    /** Legacy AgencyBooster shift preset key (pre-Companion). Migrated to FINANCE_WIDGET_STATE. */
+    LEGACY_FINANCE_PRESET: "agencybooster-finance-preset",
 
     /** Development mode flag. */
     DEV_MODE: "ab-dev",
 
     /** Settings module preferences (future). */
     SETTINGS: "ab-settings",
-
-    /** Finance module state (future). */
-    FINANCE_STATE: "ab-finance-state",
 
     /** Active tab in the Companion modal. */
     COMPANION_ACTIVE_TAB: "ab-companion-active-tab",

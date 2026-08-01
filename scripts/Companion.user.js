@@ -250,14 +250,18 @@
       STORAGE_KEYS = {
         /** Finance widget window state (position, size, collapsed, hidden). */
         COMPANION_WINDOW_STATE: "ab-companion-window-state",
-        /** Finance widget window state (legacy key for migration). */
+        /** Finance widget unified state (position, size, collapsed, hidden, shift). Single authoritative source. */
         FINANCE_WIDGET_STATE: "ab-finance-widget-state",
+        /** Legacy Finance state key — held the shift preset before unification. Removed by migration v1→v2. */
+        FINANCE_STATE: "ab-finance-state",
+        /** Legacy AgencyBooster widget state key (pre-Companion). Migrated to FINANCE_WIDGET_STATE. */
+        LEGACY_FINANCE_WIDGET: "agencybooster-finance-widget",
+        /** Legacy AgencyBooster shift preset key (pre-Companion). Migrated to FINANCE_WIDGET_STATE. */
+        LEGACY_FINANCE_PRESET: "agencybooster-finance-preset",
         /** Development mode flag. */
         DEV_MODE: "ab-dev",
         /** Settings module preferences (future). */
         SETTINGS: "ab-settings",
-        /** Finance module state (future). */
-        FINANCE_STATE: "ab-finance-state",
         /** Active tab in the Companion modal. */
         COMPANION_ACTIVE_TAB: "ab-companion-active-tab",
         /** Storage version marker. */
@@ -1772,12 +1776,14 @@
     ]
   ]);
   var ALL_SHIFTS = ["morning", "day", "night"];
-  var STORAGE_KEY = STORAGE_KEYS.FINANCE_STATE;
+  var STORAGE_KEY = STORAGE_KEYS.FINANCE_WIDGET_STATE;
   function loadShift() {
     try {
       const raw = StorageService.get(STORAGE_KEY);
-      if (raw && isShiftType(raw)) {
-        return raw;
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && isShiftType(parsed.shift)) {
+        return parsed.shift;
       }
     } catch {
     }
@@ -1785,7 +1791,19 @@
   }
   function saveShift(shift) {
     try {
-      StorageService.set(STORAGE_KEY, shift);
+      const raw = StorageService.get(STORAGE_KEY);
+      let next = {};
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object") {
+            next = { ...parsed };
+          }
+        } catch {
+        }
+      }
+      next.shift = shift;
+      StorageService.set(STORAGE_KEY, JSON.stringify(next));
     } catch {
     }
   }
@@ -2803,6 +2821,19 @@
     /** Hide the widget. */
     hide() {
       super.hide();
+    }
+    /**
+     * Persist window state together with the current shift, keeping the
+     * unified finance widget state (geometry + shift) under one storage key.
+     * Guarded against the base-constructor window where the controller is
+     * not yet assigned.
+     */
+    persistState() {
+      const shift = this.controller?.getCurrentShift();
+      if (shift) {
+        this.win = { ...this.win, shift };
+      }
+      super.persistState();
     }
     /** Expand the widget and trigger initial refresh on first expand. */
     expand() {
@@ -4272,7 +4303,7 @@
   // ../src/companion/storage-version.ts
   init_storage_service();
   init_storage_keys();
-  var STORAGE_VERSION = 1;
+  var STORAGE_VERSION = 2;
   var VERSION_KEY = STORAGE_KEYS.STORAGE_VERSION;
   function getStoredVersion() {
     const raw = StorageService.get(VERSION_KEY);
@@ -5034,7 +5065,6 @@
   // ../src/companion/finance-module.ts
   init_dev();
   var FINANCE_MODULE_ID = "finance";
-  var FINANCE_STORAGE_KEY = "ab-finance-state";
   var FinanceModule = class {
     constructor() {
       __publicField(this, "id", FINANCE_MODULE_ID);
@@ -5078,25 +5108,12 @@
       }
       if (isDevMode()) diag("[FinanceModule] initialize()");
       this.injectStyles();
-      try {
-        const saved = await this.platformServices.storage.get(FINANCE_STORAGE_KEY);
-        if (saved) {
-          if (isDevMode()) diag("[FinanceModule] loaded persisted state:", saved.shift, saved.status);
-        }
-      } catch (err) {
-        diagError("[FinanceModule] failed to load persisted state:", err);
-      }
       this.controller = new FinanceController();
       setFinanceController(this.controller);
       this.unsubscribeController = this.controller.subscribe((state) => {
         this.onControllerStateChange(state);
       });
       this.lastSnapshot = this.createSnapshot();
-      try {
-        await this.platformServices.storage.set(FINANCE_STORAGE_KEY, this.lastSnapshot);
-      } catch (err) {
-        diagError("[FinanceModule] failed to persist initial state:", err);
-      }
       this.platformServices.versionManager.createVersion(
         this.id,
         "startup",
@@ -5121,13 +5138,6 @@
     async dispose() {
       if (this.disposed) return;
       if (isDevMode()) diag("[FinanceModule] dispose()");
-      if (this.platformServices && this.lastSnapshot) {
-        try {
-          await this.platformServices.storage.set(FINANCE_STORAGE_KEY, this.lastSnapshot);
-        } catch (err) {
-          diagError("[FinanceModule] failed to persist state on dispose:", err);
-        }
-      }
       if (this.unsubscribeController) {
         this.unsubscribeController();
         this.unsubscribeController = null;
@@ -6459,8 +6469,104 @@ Snippet 3
   init_dev();
 
   // ../src/companion/storage-migration.ts
+  init_storage_service();
+  init_storage_keys();
   init_dev();
-  var MIGRATIONS = [];
+  var FINANCE_SHIFT_TYPES = ["morning", "day", "night"];
+  var DEFAULT_FINANCE_STATE = {
+    x: 24,
+    y: 24,
+    width: 360,
+    height: 380,
+    collapsed: true,
+    hidden: false
+  };
+  function isFinanceShift(value) {
+    return typeof value === "string" && FINANCE_SHIFT_TYPES.includes(value);
+  }
+  function readValidatedState(raw) {
+    if (!raw) return null;
+    try {
+      const value = JSON.parse(raw);
+      if (value && typeof value === "object" && typeof value.x === "number" && typeof value.y === "number" && typeof value.width === "number" && value.width > 0 && typeof value.height === "number" && value.height > 0 && typeof value.collapsed === "boolean" && typeof value.hidden === "boolean") {
+        const state = {
+          x: value.x,
+          y: value.y,
+          width: value.width,
+          height: value.height,
+          collapsed: value.collapsed,
+          hidden: value.hidden
+        };
+        if (isFinanceShift(value.shift)) {
+          state.shift = value.shift;
+        }
+        return state;
+      }
+    } catch {
+    }
+    return null;
+  }
+  function readLegacyWidgetState(raw) {
+    if (!raw) return null;
+    try {
+      const value = JSON.parse(raw);
+      if (!value || typeof value !== "object") return null;
+      const state = { ...DEFAULT_FINANCE_STATE };
+      if (typeof value.width === "number" && value.width > 0) {
+        state.width = value.width;
+      }
+      if (typeof value.height === "number" && value.height > 0) {
+        state.height = value.height;
+      }
+      if (typeof value.collapsed === "boolean") {
+        state.collapsed = value.collapsed;
+      }
+      if (typeof value.closed === "boolean") {
+        state.hidden = value.closed;
+      }
+      return state;
+    } catch {
+    }
+    return null;
+  }
+  function readShift(raw) {
+    if (!raw) return null;
+    try {
+      const value = JSON.parse(raw);
+      if (isFinanceShift(value)) {
+        return value;
+      }
+      if (value && typeof value === "object" && isFinanceShift(value.shift)) {
+        return value.shift;
+      }
+    } catch {
+    }
+    return null;
+  }
+  function migrateFinanceStateV1toV2() {
+    const existingRaw = StorageService.get(STORAGE_KEYS.FINANCE_WIDGET_STATE);
+    const financeStateRaw = StorageService.get(STORAGE_KEYS.FINANCE_STATE);
+    const legacyWidgetRaw = StorageService.get(STORAGE_KEYS.LEGACY_FINANCE_WIDGET);
+    const legacyPresetRaw = StorageService.get(STORAGE_KEYS.LEGACY_FINANCE_PRESET);
+    if (existingRaw || financeStateRaw || legacyWidgetRaw || legacyPresetRaw) {
+      const state = readValidatedState(existingRaw) ?? readLegacyWidgetState(legacyWidgetRaw) ?? { ...DEFAULT_FINANCE_STATE };
+      const shift = readShift(existingRaw) ?? readShift(financeStateRaw) ?? readShift(legacyPresetRaw);
+      if (shift) {
+        state.shift = shift;
+      }
+      try {
+        StorageService.set(STORAGE_KEYS.FINANCE_WIDGET_STATE, JSON.stringify(state));
+      } catch (error) {
+        diag("Finance state migration: failed to write unified state", error);
+      }
+    }
+    StorageService.remove(STORAGE_KEYS.FINANCE_STATE);
+    StorageService.remove(STORAGE_KEYS.LEGACY_FINANCE_WIDGET);
+    StorageService.remove(STORAGE_KEYS.LEGACY_FINANCE_PRESET);
+  }
+  var MIGRATIONS = [
+    { from: 1, to: 2, migrate: migrateFinanceStateV1toV2 }
+  ];
   function runMigrations() {
     const storedVersion = getStoredVersion();
     if (storedVersion >= STORAGE_VERSION) {
