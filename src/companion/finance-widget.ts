@@ -347,6 +347,10 @@ export class FinanceWidget extends CompanionWindow {
             root.classList.add(`${this.classPrefix}-collapsed`);
             root.style.width = saved.width + "px";
             root.style.height = "44px";
+            // Override the CSS min-height/min-width (200px/320px) so the
+            // persisted collapsed bar restores as header-only, not half-open.
+            root.style.minHeight = "44px";
+            root.style.minWidth = saved.width + "px";
             root.style.overflow = "hidden";
         } else {
             root.style.width = saved.width + "px";

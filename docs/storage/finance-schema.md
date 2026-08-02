@@ -94,14 +94,16 @@
 
 - **Type:** `string`
 - **Description:** Type of operation performed
-- **Observed values:**
+- **Supported values:**
   - `EmailSend` — Email sent to lady
   - `EmailRead` — Email read by lady
   - `TextChat` — Text chat session
   - `VideoChat` — Video chat session
   - `TextChatBonusCoins` — Bonus coins for text chat (sum is `0.0`)
   - `TextChatSatellite` — Satellite text chat session
+  - `EmailSendSatellite` — Satellite email sent to lady (accepted by the mapper; not observed in the reference capture)
 - **Nullable:** No
+- **Unknown values:** The mapper rejects any operation value not in the supported list (`FinanceMapperValidationError`).
 
 ### `isFinish` (optional)
 
@@ -138,6 +140,7 @@ There is **no pagination**. The server returns all transactions for the requeste
 | `TextChat` | Present | 0.15 | Text chat session |
 | `VideoChat` | Present | 0.15–0.3 | Video chat session |
 | `TextChatSatellite` | Present | 0.3 | Satellite text chat |
+| `EmailSendSatellite` | Expected Absent | UNKNOWN | Satellite email sent (mapper-supported; not observed in reference capture) |
 | `TextChatBonusCoins` | Absent | 0.0 | Bonus coins (free) |
 
 ## Response Size

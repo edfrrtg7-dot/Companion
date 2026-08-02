@@ -1568,6 +1568,7 @@
     Operation2["VideoChat"] = "VideoChat";
     Operation2["TextChatBonusCoins"] = "TextChatBonusCoins";
     Operation2["TextChatSatellite"] = "TextChatSatellite";
+    Operation2["EmailSendSatellite"] = "EmailSendSatellite";
     return Operation2;
   })(Operation || {});
   var VALID_OPERATIONS = new Set(Object.values(Operation));
@@ -2965,6 +2966,8 @@
         root.classList.add(`${this.classPrefix}-collapsed`);
         root.style.width = saved.width + "px";
         root.style.height = "44px";
+        root.style.minHeight = "44px";
+        root.style.minWidth = saved.width + "px";
         root.style.overflow = "hidden";
       } else {
         root.style.width = saved.width + "px";
@@ -3406,11 +3409,11 @@
 /* Collapsed \u2014 JS sets explicit dimensions (height 44px, width = expanded width).
    CSS makes the header fill the collapsed bar exactly and centers its content,
    so title, CASH, and actions stay vertically aligned with the expanded layout. */
-.ab-finance.collapsed .ab-finance-resize-handle {
+.ab-finance-collapsed .ab-finance-resize-handle {
     display: none;
 }
 
-.ab-finance.collapsed .ab-finance-header {
+.ab-finance-collapsed .ab-finance-header {
     border-bottom: none;
     border-radius: 10px;
     min-height: 0;

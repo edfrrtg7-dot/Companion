@@ -41,7 +41,7 @@ export interface FinanceRawResponse {
 // Operation Enum
 // ---------------------------------------------------------------------------
 
-/** All observed operation types from the Finance API. */
+/** All operation types supported by the Finance API. */
 export enum Operation {
     EmailSend = "EmailSend",
     EmailRead = "EmailRead",
@@ -49,6 +49,7 @@ export enum Operation {
     VideoChat = "VideoChat",
     TextChatBonusCoins = "TextChatBonusCoins",
     TextChatSatellite = "TextChatSatellite",
+    EmailSendSatellite = "EmailSendSatellite",
 }
 
 /** Set of all valid operation strings for runtime validation. */

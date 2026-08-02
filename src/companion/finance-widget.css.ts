@@ -30,11 +30,11 @@ export const FINANCE_WIDGET_CSS = `
 /* Collapsed — JS sets explicit dimensions (height 44px, width = expanded width).
    CSS makes the header fill the collapsed bar exactly and centers its content,
    so title, CASH, and actions stay vertically aligned with the expanded layout. */
-.ab-finance.collapsed .ab-finance-resize-handle {
+.ab-finance-collapsed .ab-finance-resize-handle {
     display: none;
 }
 
-.ab-finance.collapsed .ab-finance-header {
+.ab-finance-collapsed .ab-finance-header {
     border-bottom: none;
     border-radius: 10px;
     min-height: 0;
