@@ -228,6 +228,74 @@ export const COMPANION_STYLES_CSS = `
     justify-content: center;
 }
 
+/* ── Delay Modal: Input groups ── */
+.ab-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
+.ab-input-group label {
+    font-size: 12px;
+    color: var(--ab-text-dim);
+    font-weight: 500;
+}
+.ab-input-group input[type="number"] {
+    background-color: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--ab-border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: var(--ab-text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 14px;
+    line-height: 1.4;
+    width: 100%;
+    box-sizing: border-box;
+    /* Explicit readability in all states */
+    caret-color: var(--ab-text);
+    opacity: 1;
+    -webkit-text-fill-color: var(--ab-text);
+}
+.ab-input-group input[type="number"]:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+    background-color: rgba(0, 0, 0, 0.25);
+}
+.ab-input-group input[type="number"]:focus {
+    outline: none;
+    border-color: var(--ab-accent);
+    background-color: rgba(0, 0, 0, 0.3);
+    box-shadow: 0 0 0 2px rgba(47, 107, 255, 0.2);
+}
+.ab-input-group input[type="number"]::selection {
+    background-color: var(--ab-accent);
+    color: #fff;
+}
+.ab-input-group input[type="number"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: rgba(0, 0, 0, 0.15);
+    color: var(--ab-text-dim);
+}
+.ab-input-group input[type="number"]:invalid {
+    border-color: var(--ab-danger);
+}
+
+/* ── Delay Modal: Actions container ── */
+.ab-actions-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: flex-end;
+    align-items: center;
+    width: 100%;
+    margin-top: 8px;
+}
+.ab-actions-container .ab-btn {
+    min-width: 80px;
+    height: 40px;
+    flex-shrink: 0;
+}
+
 /* ── Full-width button ── */
 .ab-btn-full {
     width: 100%;

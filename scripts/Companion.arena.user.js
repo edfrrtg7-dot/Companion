@@ -2676,12 +2676,12 @@
       __publicField(this, "controller");
       __publicField(this, "unsubscribe");
       __publicField(this, "txContainerEl", null);
-      __publicField(this, "bodyRefreshBtn", null);
       __publicField(this, "cashDotEl", null);
       __publicField(this, "cashRefreshEl", null);
       __publicField(this, "cashIndicatorEl", null);
       __publicField(this, "shiftBtn", null);
       __publicField(this, "shiftDropdown", null);
+      __publicField(this, "boundHeaderDblClick", null);
       /** Currently displayed transaction identity keys in order. */
       __publicField(this, "displayedTxIds", []);
       /** Map of identity → row DOM element for reuse. */
@@ -2723,10 +2723,14 @@
         }
         this.controller.setShift(shift);
       });
-      __publicField(this, "onBodyRefreshClick", () => {
-        if (isDevMode()) diag("[FinanceWidget] onBodyRefreshClick()");
+      __publicField(this, "onHeaderDblClick", (event) => {
         if (this.destroyed) return;
-        this.controller.refresh();
+        const target = event.target;
+        if (!target) return;
+        const classPrefix = this.classPrefix;
+        const isInteractiveTarget = target.closest(`.${classPrefix}-cash-indicator`) !== null || target.closest(`.${classPrefix}-shift-btn`) !== null || target.closest(`.${classPrefix}-shift-dropdown`) !== null || target.closest(`.${classPrefix}-collapse-btn`) !== null || target.closest(`.${classPrefix}-close-btn`) !== null;
+        if (isInteractiveTarget) return;
+        this.toggleCollapse();
       });
       __publicField(this, "onHeaderRefreshClick", () => {
         if (isDevMode()) diag("[FinanceWidget] onHeaderRefreshClick()");
@@ -2762,8 +2766,14 @@
       if (this.destroyed) return;
       this.unsubscribe();
       this.controller.cancelPending();
+      if (this.boundHeaderDblClick && this.root) {
+        const dragHandle = this.root.querySelector(`.${this.classPrefix}-header`);
+        if (dragHandle) {
+          dragHandle.removeEventListener("dblclick", this.boundHeaderDblClick);
+        }
+        this.boundHeaderDblClick = null;
+      }
       this.txContainerEl = null;
-      this.bodyRefreshBtn = null;
       this.cashDotEl = null;
       this.cashRefreshEl = null;
       this.cashIndicatorEl = null;
@@ -3011,6 +3021,8 @@
       this.shiftDropdown = shiftDropdown;
       cashIndicator.addEventListener("click", this.onHeaderRefreshClick);
       shiftBtn.addEventListener("click", this.onShiftToggle);
+      this.boundHeaderDblClick = this.onHeaderDblClick.bind(this);
+      dragHandle.addEventListener("dblclick", this.boundHeaderDblClick);
       this.container.appendChild(root);
       this.initWindow(dragHandle, resizeHandle);
       if (isDevMode()) diag("[FinanceWidget] createRoot() end, contentEl:", !!this.contentEl, "root in DOM:", this.root.isConnected);
@@ -3053,7 +3065,6 @@
         }
         return;
       }
-      this.updateBodyRefreshButton(state.status);
       switch (state.status) {
         case "idle":
           if (isDevMode()) diag("[FinanceWidget] updateContent() - rendering IDLE");
@@ -3166,12 +3177,6 @@
       this.contentEl.appendChild(shiftInfo);
       this.contentEl.appendChild(divider1);
       this.contentEl.appendChild(creditsRow);
-      const refreshBtn = document.createElement("button");
-      refreshBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-btn-full`;
-      refreshBtn.textContent = "Refresh";
-      refreshBtn.addEventListener("click", this.onBodyRefreshClick);
-      this.bodyRefreshBtn = refreshBtn;
-      this.contentEl.appendChild(refreshBtn);
       if (isWaiting) {
         const divider2 = document.createElement("div");
         divider2.className = `${this.classPrefix}-divider`;
@@ -3299,10 +3304,6 @@
       el.textContent = text;
       return el;
     }
-    updateBodyRefreshButton(status) {
-      if (!this.bodyRefreshBtn) return;
-      this.bodyRefreshBtn.disabled = status === "loading";
-    }
   };
 
   // ../src/companion/layering.ts
@@ -3337,7 +3338,7 @@
 /* Widget root */
 .ab-finance {
     position: fixed;
-    bottom: 24px;
+    top: 24px;
     left: 24px;
     width: 400px;
     height: 440px;
@@ -3358,6 +3359,9 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    /* Container queries for responsive internal layout */
+    container-type: inline-size;
+    container-name: finance-widget;
 }
 
 /* Collapsed \u2014 JS sets explicit dimensions (height 44px, width = expanded width).
@@ -3733,13 +3737,6 @@
     cursor: not-allowed;
 }
 
-/* Fixed-width centered button variant */
-.ab-finance-btn-full {
-    width: 160px;
-    flex: none;
-    margin: 0 auto;
-}
-
 /* Divider */
 .ab-finance-divider {
     height: 1px;
@@ -3843,7 +3840,149 @@
     100% { background: transparent; }
 }
 
-/* Responsive \u2014 narrow widget (<320px) */
+/* ============================================================================
+   RESPONSIVE LAYOUT \u2014 Container Queries & clamp()
+   Finance content adapts to widget width/height without transform:scale.
+   ============================================================================ */
+
+/* Base responsive sizing using clamp() \u2014 scales smoothly within bounds */
+.ab-finance-header {
+    padding: clamp(6px, 1.5vw, 8px) clamp(10px, 2vw, 12px);
+    min-height: clamp(32px, 8vh, 36px);
+}
+
+.ab-finance-header-title {
+    font-size: clamp(12px, 2.5vw, 14px);
+    gap: clamp(4px, 1vw, 6px);
+}
+
+.ab-finance-logo {
+    width: clamp(14px, 3vw, 16px);
+    height: clamp(14px, 3vw, 16px);
+}
+
+.ab-finance-body {
+    padding: clamp(6px, 1.5vw, 10px) clamp(8px, 2vw, 14px);
+    gap: clamp(3px, 1vw, 6px);
+}
+
+.ab-finance-label {
+    font-size: clamp(10px, 2vw, 12px);
+}
+
+.ab-finance-value {
+    font-size: clamp(12px, 2.5vw, 14px);
+}
+
+.ab-finance-tx-header,
+.ab-finance-tx-row {
+    grid-template-columns: clamp(40px, 10vw, 50px) 1fr 1fr clamp(50px, 12vw, 60px);
+    gap: clamp(3px, 1vw, 4px);
+    font-size: clamp(9px, 1.8vw, 11px);
+}
+
+.ab-finance-btn {
+    font-size: clamp(10px, 2vw, 12px);
+    padding: clamp(3px, 0.8vw, 5px) clamp(4px, 1vw, 6px);
+}
+
+.ab-finance-cash-indicator {
+    padding: clamp(1px, 0.5vw, 2px) clamp(6px, 1.5vw, 8px);
+}
+
+.ab-finance-cash-label {
+    font-size: clamp(10px, 2vw, 12px);
+}
+
+.ab-finance-cash-icon {
+    font-size: clamp(12px, 2.5vw, 14px);
+}
+
+.ab-finance-shift-info {
+    gap: clamp(2px, 0.8vw, 4px);
+}
+
+.ab-finance-shift-info-row {
+    font-size: clamp(10px, 2vw, 12px);
+}
+
+.ab-finance-collapsed .ab-finance-header {
+    padding: clamp(6px, 1.5vw, 8px) clamp(10px, 2vw, 12px);
+}
+
+/* Container query: narrow widget \u2014 compress layout */
+@container finance-widget (max-width: 340px) {
+    .ab-finance-body {
+        padding: 6px 8px;
+        gap: 3px;
+    }
+    .ab-finance-tx-header,
+    .ab-finance-tx-row {
+        grid-template-columns: 40px 1fr 1fr 50px;
+        gap: 3px;
+        font-size: 9px;
+    }
+    .ab-finance-shift-info-row {
+        font-size: 10px;
+    }
+    .ab-finance-cash-indicator {
+        padding: 1px 6px;
+    }
+    .ab-finance-cash-label {
+        font-size: 10px;
+    }
+}
+
+/* Container query: medium widget \u2014 default layout */
+@container finance-widget (min-width: 341px) and (max-width: 480px) {
+    .ab-finance-body {
+        padding: 8px 10px;
+        gap: 4px;
+    }
+    .ab-finance-tx-header,
+    .ab-finance-tx-row {
+        grid-template-columns: 50px 1fr 1fr 60px;
+        gap: 4px;
+        font-size: 10px;
+    }
+}
+
+/* Container query: wide widget \u2014 expanded columns & typography */
+@container finance-widget (min-width: 481px) {
+    .ab-finance-body {
+        padding: 10px 14px;
+        gap: 6px;
+    }
+    .ab-finance-tx-header,
+    .ab-finance-tx-row {
+        grid-template-columns: 60px 1fr 1fr 70px;
+        gap: 6px;
+        font-size: 11px;
+    }
+    .ab-finance-label {
+        font-size: 11px;
+    }
+    .ab-finance-value {
+        font-size: 13px;
+    }
+    .ab-finance-shift-info-row {
+        font-size: 11px;
+    }
+}
+
+/* Container query: tall widget \u2014 more vertical space for transactions */
+@container finance-widget (min-height: 400px) {
+    .ab-finance-body {
+        flex: 1;
+        overflow-y: auto;
+    }
+    .ab-finance-tx-container {
+        max-height: calc(100% - 60px);
+        overflow-y: auto;
+    }
+}
+
+/* Legacy media queries as fallback for browsers without container query support */
 @media (max-width: 320px) {
     .ab-finance {
         min-width: 240px;
@@ -3891,7 +4030,6 @@
     }
 }
 
-/* Responsive \u2014 wide widget (>500px) */
 @media (min-width: 500px) {
     .ab-finance-body {
         padding: 10px 14px;
@@ -5049,6 +5187,21 @@
       __publicField(this, "lastSnapshot", null);
       __publicField(this, "unsubscribeController", null);
       __publicField(this, "stylesInjected", false);
+      __publicField(this, "boundHashChangeHandler", null);
+      /** Handle SPA route changes via hashchange (Part D). */
+      __publicField(this, "onHashChange", () => {
+        if (this.disposed || !this.initialized || !this.widget) return;
+        const runtime = getRuntimeEnvironment();
+        const newCategory = runtime.getRouteCategory();
+        if (newCategory === "non-chat") {
+          if (!this.widget.isCollapsed) {
+            if (isDevMode()) diag("[FinanceModule] hashchange: chat -> non-chat, collapsing");
+            this.widget.collapse();
+          }
+        } else if (newCategory === "chat") {
+          if (isDevMode()) diag("[FinanceModule] hashchange: non-chat -> chat, restoring preference");
+        }
+      });
     }
     // -----------------------------------------------------------------------
     // Dependency Injection
@@ -5089,6 +5242,8 @@
         })
       );
       this.initialized = true;
+      this.boundHashChangeHandler = this.onHashChange.bind(this);
+      window.addEventListener("hashchange", this.boundHashChangeHandler);
       await this.platformServices.eventBus.publish(
         "finance:initialized",
         { moduleId: this.id },
@@ -5102,6 +5257,10 @@
       if (this.unsubscribeController) {
         this.unsubscribeController();
         this.unsubscribeController = null;
+      }
+      if (this.boundHashChangeHandler) {
+        window.removeEventListener("hashchange", this.boundHashChangeHandler);
+        this.boundHashChangeHandler = null;
       }
       this.controller?.cancelPending();
       this.widget?.destroy();
@@ -5169,15 +5328,29 @@
       if (isDevMode()) diag("[FinanceModule] widget shown");
     }
     /**
-     * Restore the widget to its persisted visibility state.
-     * Creates the widget if needed but never forces it visible,
-     * so a persisted `hidden: true` preference is respected at startup.
+     * Restore the widget to its persisted visibility state with route-dependent behavior.
+     * Chat routes restore persisted state; non-chat routes force collapsed without auto-refresh.
      */
     restoreVisibility() {
       if (!this.initialized || this.disposed) return;
       if (!this.controller) return;
       if (!this.widget) {
         this.widget = new FinanceWidget(this.controller);
+      }
+      const runtime = getRuntimeEnvironment();
+      const routeCategory = runtime.getRouteCategory();
+      if (routeCategory === "chat") {
+        if (isDevMode()) diag("[FinanceModule] chat route \u2014 restoring persisted state");
+      } else if (routeCategory === "non-chat") {
+        if (isDevMode()) diag("[FinanceModule] non-chat route \u2014 forcing collapsed, preserving geometry");
+        if (this.widget) {
+          if (!this.widget.isCollapsed) {
+            this.widget.collapse();
+          }
+          this.widget.show();
+        }
+      } else {
+        if (isDevMode()) diag("[FinanceModule] unknown route \u2014 restoring persisted state");
       }
       if (isDevMode()) diag("[FinanceModule] widget visibility restored");
     }
@@ -5605,6 +5778,74 @@
     justify-content: center;
 }
 
+/* \u2500\u2500 Delay Modal: Input groups \u2500\u2500 */
+.ab-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
+.ab-input-group label {
+    font-size: 12px;
+    color: var(--ab-text-dim);
+    font-weight: 500;
+}
+.ab-input-group input[type="number"] {
+    background-color: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--ab-border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: var(--ab-text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 14px;
+    line-height: 1.4;
+    width: 100%;
+    box-sizing: border-box;
+    /* Explicit readability in all states */
+    caret-color: var(--ab-text);
+    opacity: 1;
+    -webkit-text-fill-color: var(--ab-text);
+}
+.ab-input-group input[type="number"]:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+    background-color: rgba(0, 0, 0, 0.25);
+}
+.ab-input-group input[type="number"]:focus {
+    outline: none;
+    border-color: var(--ab-accent);
+    background-color: rgba(0, 0, 0, 0.3);
+    box-shadow: 0 0 0 2px rgba(47, 107, 255, 0.2);
+}
+.ab-input-group input[type="number"]::selection {
+    background-color: var(--ab-accent);
+    color: #fff;
+}
+.ab-input-group input[type="number"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: rgba(0, 0, 0, 0.15);
+    color: var(--ab-text-dim);
+}
+.ab-input-group input[type="number"]:invalid {
+    border-color: var(--ab-danger);
+}
+
+/* \u2500\u2500 Delay Modal: Actions container \u2500\u2500 */
+.ab-actions-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: flex-end;
+    align-items: center;
+    width: 100%;
+    margin-top: 8px;
+}
+.ab-actions-container .ab-btn {
+    min-width: 80px;
+    height: 40px;
+    flex-shrink: 0;
+}
+
 /* \u2500\u2500 Full-width button \u2500\u2500 */
 .ab-btn-full {
     width: 100%;
@@ -5941,7 +6182,7 @@ Snippet 3
                         <label>Broadcast Delay (seconds)</label>
                         <input type="number" id="ab-delay-broad" value="${initialBroad}" min="1" max="3600">
                     </div>
-                    <div class="ab-row" style="margin-top: 4px;">
+                    <div class="ab-actions-container">
                         <button class="ab-btn primary" id="ab-delay-apply">Apply</button>
                         <button class="ab-btn" id="ab-delay-cancel">Cancel</button>
                     </div>

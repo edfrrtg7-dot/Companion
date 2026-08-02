@@ -4,7 +4,7 @@ export const FINANCE_WIDGET_CSS = `
 /* Widget root */
 .ab-finance {
     position: fixed;
-    bottom: 24px;
+    top: 24px;
     left: 24px;
     width: 400px;
     height: 440px;
@@ -25,6 +25,9 @@ export const FINANCE_WIDGET_CSS = `
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    /* Container queries for responsive internal layout */
+    container-type: inline-size;
+    container-name: finance-widget;
 }
 
 /* Collapsed — JS sets explicit dimensions (height 44px, width = expanded width).
@@ -400,13 +403,6 @@ export const FINANCE_WIDGET_CSS = `
     cursor: not-allowed;
 }
 
-/* Fixed-width centered button variant */
-.ab-finance-btn-full {
-    width: 160px;
-    flex: none;
-    margin: 0 auto;
-}
-
 /* Divider */
 .ab-finance-divider {
     height: 1px;
@@ -510,7 +506,149 @@ export const FINANCE_WIDGET_CSS = `
     100% { background: transparent; }
 }
 
-/* Responsive — narrow widget (<320px) */
+/* ============================================================================
+   RESPONSIVE LAYOUT — Container Queries & clamp()
+   Finance content adapts to widget width/height without transform:scale.
+   ============================================================================ */
+
+/* Base responsive sizing using clamp() — scales smoothly within bounds */
+.ab-finance-header {
+    padding: clamp(6px, 1.5vw, 8px) clamp(10px, 2vw, 12px);
+    min-height: clamp(32px, 8vh, 36px);
+}
+
+.ab-finance-header-title {
+    font-size: clamp(12px, 2.5vw, 14px);
+    gap: clamp(4px, 1vw, 6px);
+}
+
+.ab-finance-logo {
+    width: clamp(14px, 3vw, 16px);
+    height: clamp(14px, 3vw, 16px);
+}
+
+.ab-finance-body {
+    padding: clamp(6px, 1.5vw, 10px) clamp(8px, 2vw, 14px);
+    gap: clamp(3px, 1vw, 6px);
+}
+
+.ab-finance-label {
+    font-size: clamp(10px, 2vw, 12px);
+}
+
+.ab-finance-value {
+    font-size: clamp(12px, 2.5vw, 14px);
+}
+
+.ab-finance-tx-header,
+.ab-finance-tx-row {
+    grid-template-columns: clamp(40px, 10vw, 50px) 1fr 1fr clamp(50px, 12vw, 60px);
+    gap: clamp(3px, 1vw, 4px);
+    font-size: clamp(9px, 1.8vw, 11px);
+}
+
+.ab-finance-btn {
+    font-size: clamp(10px, 2vw, 12px);
+    padding: clamp(3px, 0.8vw, 5px) clamp(4px, 1vw, 6px);
+}
+
+.ab-finance-cash-indicator {
+    padding: clamp(1px, 0.5vw, 2px) clamp(6px, 1.5vw, 8px);
+}
+
+.ab-finance-cash-label {
+    font-size: clamp(10px, 2vw, 12px);
+}
+
+.ab-finance-cash-icon {
+    font-size: clamp(12px, 2.5vw, 14px);
+}
+
+.ab-finance-shift-info {
+    gap: clamp(2px, 0.8vw, 4px);
+}
+
+.ab-finance-shift-info-row {
+    font-size: clamp(10px, 2vw, 12px);
+}
+
+.ab-finance-collapsed .ab-finance-header {
+    padding: clamp(6px, 1.5vw, 8px) clamp(10px, 2vw, 12px);
+}
+
+/* Container query: narrow widget — compress layout */
+@container finance-widget (max-width: 340px) {
+    .ab-finance-body {
+        padding: 6px 8px;
+        gap: 3px;
+    }
+    .ab-finance-tx-header,
+    .ab-finance-tx-row {
+        grid-template-columns: 40px 1fr 1fr 50px;
+        gap: 3px;
+        font-size: 9px;
+    }
+    .ab-finance-shift-info-row {
+        font-size: 10px;
+    }
+    .ab-finance-cash-indicator {
+        padding: 1px 6px;
+    }
+    .ab-finance-cash-label {
+        font-size: 10px;
+    }
+}
+
+/* Container query: medium widget — default layout */
+@container finance-widget (min-width: 341px) and (max-width: 480px) {
+    .ab-finance-body {
+        padding: 8px 10px;
+        gap: 4px;
+    }
+    .ab-finance-tx-header,
+    .ab-finance-tx-row {
+        grid-template-columns: 50px 1fr 1fr 60px;
+        gap: 4px;
+        font-size: 10px;
+    }
+}
+
+/* Container query: wide widget — expanded columns & typography */
+@container finance-widget (min-width: 481px) {
+    .ab-finance-body {
+        padding: 10px 14px;
+        gap: 6px;
+    }
+    .ab-finance-tx-header,
+    .ab-finance-tx-row {
+        grid-template-columns: 60px 1fr 1fr 70px;
+        gap: 6px;
+        font-size: 11px;
+    }
+    .ab-finance-label {
+        font-size: 11px;
+    }
+    .ab-finance-value {
+        font-size: 13px;
+    }
+    .ab-finance-shift-info-row {
+        font-size: 11px;
+    }
+}
+
+/* Container query: tall widget — more vertical space for transactions */
+@container finance-widget (min-height: 400px) {
+    .ab-finance-body {
+        flex: 1;
+        overflow-y: auto;
+    }
+    .ab-finance-tx-container {
+        max-height: calc(100% - 60px);
+        overflow-y: auto;
+    }
+}
+
+/* Legacy media queries as fallback for browsers without container query support */
 @media (max-width: 320px) {
     .ab-finance {
         min-width: 240px;
@@ -558,7 +696,6 @@ export const FINANCE_WIDGET_CSS = `
     }
 }
 
-/* Responsive — wide widget (>500px) */
 @media (min-width: 500px) {
     .ab-finance-body {
         padding: 10px 14px;

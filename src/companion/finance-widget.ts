@@ -77,12 +77,12 @@ export class FinanceWidget extends CompanionWindow {
     private readonly controller: FinanceController;
     private readonly unsubscribe: () => void;
     private txContainerEl: HTMLDivElement | null = null;
-    private bodyRefreshBtn: HTMLButtonElement | null = null;
     private cashDotEl: HTMLSpanElement | null = null;
     private cashRefreshEl: HTMLSpanElement | null = null;
     private cashIndicatorEl: HTMLElement | null = null;
     private shiftBtn: HTMLButtonElement | null = null;
     private shiftDropdown: HTMLDivElement | null = null;
+    private boundHeaderDblClick: ((e: MouseEvent) => void) | null = null;
 
     /** Currently displayed transaction identity keys in order. */
     private displayedTxIds: string[] = [];
@@ -148,8 +148,16 @@ export class FinanceWidget extends CompanionWindow {
         this.unsubscribe();
         this.controller.cancelPending();
 
+        // Remove header double-click listener (Part B)
+        if (this.boundHeaderDblClick && this.root) {
+            const dragHandle = this.root.querySelector(`.${this.classPrefix}-header`);
+            if (dragHandle) {
+                dragHandle.removeEventListener("dblclick", this.boundHeaderDblClick);
+            }
+            this.boundHeaderDblClick = null;
+        }
+
         this.txContainerEl = null;
-        this.bodyRefreshBtn = null;
         this.cashDotEl = null;
         this.cashRefreshEl = null;
         this.cashIndicatorEl = null;
@@ -476,6 +484,10 @@ export class FinanceWidget extends CompanionWindow {
         cashIndicator.addEventListener("click", this.onHeaderRefreshClick);
         shiftBtn.addEventListener("click", this.onShiftToggle);
 
+        // Header double-click to toggle collapse/expand (Part B)
+        this.boundHeaderDblClick = this.onHeaderDblClick.bind(this);
+        dragHandle.addEventListener("dblclick", this.boundHeaderDblClick);
+
         this.container.appendChild(root);
 
         // Initialize window behavior (drag, resize, keyboard, collapse/close buttons)
@@ -548,9 +560,6 @@ export class FinanceWidget extends CompanionWindow {
             }
             return;
         }
-
-        // Update body refresh button state
-        this.updateBodyRefreshButton(state.status);
 
         switch (state.status) {
             case "idle":
@@ -695,14 +704,6 @@ export class FinanceWidget extends CompanionWindow {
         this.contentEl.appendChild(shiftInfo);
         this.contentEl.appendChild(divider1);
         this.contentEl.appendChild(creditsRow);
-
-        // Refresh button
-        const refreshBtn = document.createElement("button");
-        refreshBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-btn-full`;
-        refreshBtn.textContent = "Refresh";
-        refreshBtn.addEventListener("click", this.onBodyRefreshClick);
-        this.bodyRefreshBtn = refreshBtn;
-        this.contentEl.appendChild(refreshBtn);
 
         if (isWaiting) {
             const divider2 = document.createElement("div");
@@ -857,16 +858,24 @@ this.contentEl.appendChild(errorEl);
         return el;
     }
 
-    private onBodyRefreshClick = (): void => {
-        if (isDevMode()) diag("[FinanceWidget] onBodyRefreshClick()");
+    private onHeaderDblClick = (event: MouseEvent): void => {
         if (this.destroyed) return;
-        this.controller.refresh();
-    };
+        const target = event.target as HTMLElement;
+        if (!target) return;
 
-    private updateBodyRefreshButton(status: string): void {
-        if (!this.bodyRefreshBtn) return;
-        this.bodyRefreshBtn.disabled = status === "loading";
-    }
+        // Filter out interactive header controls — double-clicking them must not toggle collapse
+        const classPrefix = this.classPrefix;
+        const isInteractiveTarget =
+            target.closest(`.${classPrefix}-cash-indicator`) !== null ||
+            target.closest(`.${classPrefix}-shift-btn`) !== null ||
+            target.closest(`.${classPrefix}-shift-dropdown`) !== null ||
+            target.closest(`.${classPrefix}-collapse-btn`) !== null ||
+            target.closest(`.${classPrefix}-close-btn`) !== null;
+
+        if (isInteractiveTarget) return;
+
+        this.toggleCollapse();
+    };
 
     private onHeaderRefreshClick = (): void => {
         if (isDevMode()) diag("[FinanceWidget] onHeaderRefreshClick()");

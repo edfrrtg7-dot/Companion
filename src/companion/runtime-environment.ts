@@ -8,6 +8,10 @@ export interface RuntimeEnvironment {
     setGlobal(key: string, value: unknown): void;
     getReadyState(): RuntimeReadyState;
     onDomReady(callback: () => void): void;
+    /** Detect if current GoldenBride route is the chat/mail route. */
+    isChatRoute(): boolean;
+    /** Get current route category for Finance startup logic. */
+    getRouteCategory(): "chat" | "non-chat" | "unknown";
 }
 
 let currentRuntime: RuntimeEnvironment | undefined;
@@ -76,5 +80,28 @@ export class ChromeRuntimeEnvironment implements RuntimeEnvironment {
         } catch {
             queueMicrotask(callback);
         }
+    }
+
+    /** Detect if current GoldenBride route is the chat/mail route (e.g., #!VIEWMAIL;0;ALLMAIL). */
+    isChatRoute(): boolean {
+        try {
+            const hash = window.location.hash;
+            return hash.includes("VIEWMAIL");
+        } catch {
+            return false;
+        }
+    }
+
+    /** Get current route category for Finance startup logic. */
+    getRouteCategory(): "chat" | "non-chat" | "unknown" {
+        if (this.isChatRoute()) return "chat";
+        try {
+            const hash = window.location.hash;
+            // GoldenBride non-chat routes typically start with #!HOME or other non-VIEWMAIL routes
+            if (hash.startsWith("#!")) return "non-chat";
+        } catch {
+            // ignore
+        }
+        return "unknown";
     }
 }

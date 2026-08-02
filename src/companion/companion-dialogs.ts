@@ -170,7 +170,7 @@ export function showDelayModal(initialDelays?: { priv: number; broad: number }):
                         <label>Broadcast Delay (seconds)</label>
                         <input type="number" id="ab-delay-broad" value="${initialBroad}" min="1" max="3600">
                     </div>
-                    <div class="ab-row" style="margin-top: 4px;">
+                    <div class="ab-actions-container">
                         <button class="ab-btn primary" id="ab-delay-apply">Apply</button>
                         <button class="ab-btn" id="ab-delay-cancel">Cancel</button>
                     </div>
