@@ -2052,6 +2052,7 @@
       __publicField(this, "abortController", null);
       __publicField(this, "unviewedTxIds", /* @__PURE__ */ new Set());
       __publicField(this, "allSeenTxIds", /* @__PURE__ */ new Set());
+      __publicField(this, "requestSeq", 0);
       const shift = config.shift ?? FinanceShift.getSavedOrDetect();
       const range = FinanceShift.computeDateRange(shift);
       this.state = {
@@ -2115,6 +2116,7 @@
       this.setState({ status: "loading", error: null });
       const controller = new AbortController();
       this.abortController = controller;
+      const seq = ++this.requestSeq;
       try {
         const raw = await this.client.fetchTransactions(
           this.state.from,
@@ -2124,10 +2126,17 @@
             timeoutMs: this.timeoutMs
           }
         );
+        if (seq !== this.requestSeq) {
+          return;
+        }
         if (controller.signal.aborted) {
+          this.exitLoadingOnCancellation();
           return;
         }
         const mapped = FinanceMapper.mapResponse(raw);
+        if (seq !== this.requestSeq) {
+          return;
+        }
         const currentIds = new Set((mapped.list ?? []).map((tx) => txIdentity(tx)));
         for (const id of this.unviewedTxIds) {
           if (!currentIds.has(id)) {
@@ -2142,7 +2151,11 @@
         }
         this.setState({ status: "loaded", data: mapped, error: null, unviewedTransactions: this.unviewedTxIds.size });
       } catch (error) {
+        if (seq !== this.requestSeq) {
+          return;
+        }
         if (controller.signal.aborted) {
+          this.exitLoadingOnCancellation();
           return;
         }
         if (error instanceof FinanceApiAbortError) {
@@ -2217,6 +2230,19 @@
     setState(partial) {
       this.state = { ...this.state, ...partial };
       this.notify();
+    }
+    /**
+     * Exit the loading state after the active request was cancelled with no
+     * successor. Preserves existing data, clears the current error, and
+     * publishes exactly one terminal state. Guarded on status so it never
+     * overwrites a terminal state already produced by setShift() or
+     * setDateRange(). Callers must only invoke this for the current request
+     * (seq === this.requestSeq).
+     */
+    exitLoadingOnCancellation() {
+      if (this.state.status === "loading") {
+        this.setState({ status: "idle", error: null });
+      }
     }
     notify() {
       for (const listener of this.listeners) {
@@ -2896,10 +2922,15 @@
     expand() {
       const wasCollapsed = this.win.collapsed;
       super.expand();
-      if (wasCollapsed && !this.firstExpandDone) {
-        this.firstExpandDone = true;
-        if (isDevMode()) diag("[FinanceWidget] first expand, triggering refresh");
-        this.controller.refresh();
+      if (wasCollapsed) {
+        if (!this.firstExpandDone) {
+          this.firstExpandDone = true;
+          if (isDevMode()) diag("[FinanceWidget] first expand, triggering refresh");
+          this.controller.refresh();
+        } else {
+          if (isDevMode()) diag("[FinanceWidget] re-expand, re-rendering current state");
+          this.render(this.controller.getState());
+        }
       }
     }
     /**

@@ -73,6 +73,7 @@ export class FinanceController {
     private abortController: AbortController | null = null;
     private unviewedTxIds: Set<string> = new Set();
     private allSeenTxIds: Set<string> = new Set();
+    private requestSeq = 0;
 
     constructor(config: FinanceControllerConfig = {}) {
         const shift = config.shift ?? FinanceShift.getSavedOrDetect();
@@ -150,6 +151,7 @@ export class FinanceController {
 
         const controller = new AbortController();
         this.abortController = controller;
+        const seq = ++this.requestSeq;
 
         try {
             const raw = await this.client.fetchTransactions(
@@ -161,11 +163,22 @@ export class FinanceController {
                 }
             );
 
+            if (seq !== this.requestSeq) {
+                // Superseded by a newer request — discard the stale result.
+                return;
+            }
+
             if (controller.signal.aborted) {
+                // Cancelled with no successor — exit loading without dropping data.
+                this.exitLoadingOnCancellation();
                 return;
             }
 
             const mapped = FinanceMapper.mapResponse(raw);
+            if (seq !== this.requestSeq) {
+                return;
+            }
+
             const currentIds = new Set((mapped.list ?? []).map(tx => txIdentity(tx)));
 
             // Prune unviewed IDs no longer in current data
@@ -185,7 +198,13 @@ export class FinanceController {
 
             this.setState({ status: "loaded", data: mapped, error: null, unviewedTransactions: this.unviewedTxIds.size });
         } catch (error: unknown) {
+            if (seq !== this.requestSeq) {
+                return;
+            }
+
             if (controller.signal.aborted) {
+                // Cancelled with no successor — exit loading without dropping data.
+                this.exitLoadingOnCancellation();
                 return;
             }
 
@@ -272,6 +291,20 @@ export class FinanceController {
     private setState(partial: Partial<FinanceState>): void {
         this.state = { ...this.state, ...partial };
         this.notify();
+    }
+
+    /**
+     * Exit the loading state after the active request was cancelled with no
+     * successor. Preserves existing data, clears the current error, and
+     * publishes exactly one terminal state. Guarded on status so it never
+     * overwrites a terminal state already produced by setShift() or
+     * setDateRange(). Callers must only invoke this for the current request
+     * (seq === this.requestSeq).
+     */
+    private exitLoadingOnCancellation(): void {
+        if (this.state.status === "loading") {
+            this.setState({ status: "idle", error: null });
+        }
     }
 
     private notify(): void {

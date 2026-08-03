@@ -211,10 +211,18 @@ export class FinanceWidget extends CompanionWindow {
     override expand(): void {
         const wasCollapsed = this.win.collapsed;
         super.expand();
-        if (wasCollapsed && !this.firstExpandDone) {
-            this.firstExpandDone = true;
-            if (isDevMode()) diag("[FinanceWidget] first expand, triggering refresh");
-            this.controller.refresh();
+        if (wasCollapsed) {
+            if (!this.firstExpandDone) {
+                this.firstExpandDone = true;
+                if (isDevMode()) diag("[FinanceWidget] first expand, triggering refresh");
+                this.controller.refresh();
+            } else {
+                // Re-expand: render the controller's current state so the body
+                // never shows stale content (e.g. a "Loading…" rendered before
+                // a collapse) after the widget is reopened. No new request.
+                if (isDevMode()) diag("[FinanceWidget] re-expand, re-rendering current state");
+                this.render(this.controller.getState());
+            }
         }
     }
 
