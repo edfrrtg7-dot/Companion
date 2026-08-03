@@ -12,6 +12,9 @@
  * Restored from b44e683 — the last userscript commit.
  */
 
+import { addImportHistory } from "./dev";
+import type { ImportHistoryEntry } from "./dev";
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -22,6 +25,28 @@ const DEFAULT_DELAY = 65;
 const MAX_WAIT_MS = 5000;
 const POLL_INTERVAL_MS = 250;
 const REQUIRED_STOP_TICKS = 4;
+
+/**
+ * Result of a snippet import operation.
+ */
+export interface SnippetImportResult {
+    readonly outcome: "success" | "no-change" | "failure" | "cancelled";
+    readonly targetName: string;
+    readonly linesEntered: number;
+    readonly uniqueSnippets: number;
+    readonly previousMessageCount: number;
+    readonly finalMessageCount: number;
+    readonly duplicatesSkipped: number;
+    readonly message: string;
+}
+
+/**
+ * Options controlling snippet import behaviour.
+ */
+export interface SnippetImportOptions {
+    /** Optional confirmation gate invoked before replacement when the target already has messages. */
+    readonly confirmReplace?: (message: string) => Promise<boolean>;
+}
 
 // ---------------------------------------------------------------------------
 // Profile access
@@ -305,127 +330,274 @@ export class CrmService {
     }
 
     /**
-     * Import snippets into a messages container using canonical message structure.
-     * - Detects text/delay properties from existing messages
-     * - Uses first existing message as template
-     * - Generates sequential numeric IDs (1, 2, 3...)
-     * - Sets first message delay to 0, subsequent to detected delay value
-     * @param messages - The messages object to import into (IceBreaker or Broadcast)
-     * @param snippets - Array of snippet texts to import
-     * @returns Number of snippets actually imported (after deduplication)
+     * Normalize raw textarea lines into an ordered, deduplicated snippet list.
+     * Pure function: trims each line, drops empty lines, keeps the first
+     * occurrence of duplicated text (case-sensitive compare), and counts the
+     * duplicates that were skipped. Performs no storage, profile, history,
+     * or UI access.
      */
-    static importSnippets(messages: Record<string, unknown>, snippets: string[]): number {
-        if (!messages || typeof messages !== "object") return 0;
-
-        const existingTexts = new Set<string>();
-        for (const msg of Object.values(messages)) {
-            if (msg && typeof msg === "object") {
-                const textProp = Object.keys(msg).find(k => typeof (msg as any)[k] === "string" && k !== "intervalSeconds" && k !== "delay" && k !== "interval" && k !== "timeout" && k !== "seconds");
-                if (textProp && (msg as any)[textProp]) {
-                    existingTexts.add((msg as any)[textProp]);
-                }
+    static normalizeSnippets(lines: readonly string[]): { linesEntered: number; unique: string[]; duplicatesSkipped: number } {
+        const seen = new Set<string>();
+        const unique: string[] = [];
+        let duplicatesSkipped = 0;
+        let linesEntered = 0;
+        for (const raw of lines) {
+            const trimmed = String(raw).trim();
+            if (trimmed.length === 0) continue;
+            linesEntered++;
+            if (seen.has(trimmed)) {
+                duplicatesSkipped++;
+            } else {
+                seen.add(trimmed);
+                unique.push(trimmed);
             }
         }
-
-        // Detect properties from existing messages
-        const textProp = CrmService.detectTextProperty(messages);
-        const delayProp = CrmService.detectDelayProperty(messages) ?? "intervalSeconds";
-
-        // Get template from first existing message
-        const template = Object.values(messages)[0] as Record<string, unknown> | undefined;
-
-        // Determine next sequential ID
-        let nextId = 1;
-        for (const key of Object.keys(messages)) {
-            const num = parseInt(key, 10);
-            if (!isNaN(num) && num >= nextId) {
-                nextId = num + 1;
-            }
-        }
-
-        // Determine delay value (first non-zero delay from existing, or 60 default)
-        let delayValue = 60;
-        if (template && typeof template === "object" && delayProp in template) {
-            const templateDelay = template[delayProp];
-            if (typeof templateDelay === "number" && templateDelay > 0) {
-                delayValue = templateDelay;
-            }
-        }
-
-        let importedCount = 0;
-        for (const snippet of snippets) {
-            if (!existingTexts.has(snippet)) {
-                const id = String(nextId++);
-                const newMsg: Record<string, unknown> = template ? { ...template } : {};
-                newMsg[textProp] = snippet;
-                newMsg[delayProp] = importedCount === 0 ? 0 : delayValue;
-                messages[id] = newMsg;
-                existingTexts.add(snippet);
-                importedCount++;
-            }
-        }
-        return importedCount;
+        return { linesEntered, unique, duplicatesSkipped };
     }
 
     /**
-     * Import snippets into a profile (IceBreaker or Broadcast).
-     * Handles profile lookup, validation, storage update, and history logging.
-     * @param target - "icebreaker" or "broadcast"
-     * @param snippets - Array of snippet texts to import
-     * @returns Result object with importedCount and message
+     * Import snippets into a profile (IceBreaker or Broadcast) using
+     * deterministic replacement semantics.
+     *
+     * The pasted snippet list is treated as the authoritative, ordered
+     * message collection. The target collection is rebuilt from scratch with
+     * sequential keys "1".."N" and the canonical { text, intervalSeconds }
+     * message schema, preserving the currently configured target delay.
+     *
+     * Flow: fresh profile read -> count current target messages -> optional
+     * confirmation gate -> re-read profile after confirmation -> delay
+     * detection -> sequential rebuild -> canonical no-change compare -> one
+     * atomic write -> read-back verification -> rollback on failure.
+     *
+     * History is recorded through a static import of addImportHistory and is
+     * deterministic for success / no-change / failed outcomes. Cancelled
+     * operations record nothing and never touch storage.
      */
-    static importSnippetsToProfile(target: "icebreaker" | "broadcast", snippets: string[]): { importedCount: number; message: string } {
-        if (snippets.length === 0) {
-            return { importedCount: 0, message: "No valid snippets to import." };
+    static async importSnippetsToProfile(target: "icebreaker" | "broadcast", snippets: readonly string[], options: SnippetImportOptions = {}): Promise<SnippetImportResult> {
+        const targetName = target === "icebreaker" ? "IceBreaker" : "Broadcast";
+        const { linesEntered, unique, duplicatesSkipped } = CrmService.normalizeSnippets(snippets);
+
+        const base = (overrides: Partial<SnippetImportResult>): SnippetImportResult => ({
+            outcome: "failure",
+            targetName,
+            linesEntered,
+            uniqueSnippets: unique.length,
+            previousMessageCount: 0,
+            finalMessageCount: 0,
+            duplicatesSkipped,
+            message: "",
+            ...overrides,
+        });
+
+        if (unique.length === 0) {
+            return base({ message: "No valid snippets entered. Existing messages were not changed." });
         }
 
         const key = CrmService.findProfileKey();
         if (!key) {
-            return { importedCount: 0, message: "No CRM profile found." };
+            return base({ message: "No CRM profile found." });
+        }
+        const profileId = key.replace(CRM_STORAGE_PREFIX, "");
+
+        const initial = CrmService.readProfile(key);
+        if (!initial || !CrmService.validateProfile(initial)) {
+            return base({ message: "Invalid profile structure." });
         }
 
+        const initialMessages = CrmService.getTargetMessages(initial, target);
+        if (initialMessages === undefined) {
+            return base({ message: "Target collection not found in profile." });
+        }
+        const previousMessageCount = Object.keys(initialMessages).length;
+
+        if (previousMessageCount > 0 && options.confirmReplace) {
+            const confirmed = await options.confirmReplace(
+                `${targetName} currently has ${previousMessageCount} message(s).\n\nReplacing them will remove ${previousMessageCount} existing message(s) and rebuild the list from your snippets.`,
+            );
+            if (!confirmed) {
+                return base({
+                    outcome: "cancelled",
+                    previousMessageCount,
+                    finalMessageCount: previousMessageCount,
+                    message: "Import cancelled. Existing messages were not changed.",
+                });
+            }
+        }
+
+        // Re-read the profile fresh after confirmation to operate on latest state.
         const data = CrmService.readProfile(key);
         if (!data || !CrmService.validateProfile(data)) {
-            return { importedCount: 0, message: "Invalid profile structure." };
+            return base({ message: "Invalid profile structure." });
         }
 
-        let importedCount = 0;
-        const profileData = data as any;
-
-        if (target === "icebreaker") {
-            if (!profileData.messages || typeof profileData.messages !== "object") {
-                profileData.messages = {};
-            }
-            importedCount = CrmService.importSnippets(profileData.messages, snippets);
-        } else if (target === "broadcast") {
-            if (!profileData.broadcast || typeof profileData.broadcast !== "object") {
-                profileData.broadcast = {};
-            }
-            if (!profileData.broadcast.messages || typeof profileData.broadcast.messages !== "object") {
-                profileData.broadcast.messages = {};
-            }
-            importedCount = CrmService.importSnippets(profileData.broadcast.messages, snippets);
-        } else {
-            return { importedCount: 0, message: "Target collection not found in profile." };
+        const messages = CrmService.getTargetMessages(data, target);
+        if (messages === undefined) {
+            return base({ message: "Target collection not found in profile." });
         }
 
-        if (importedCount === 0) {
-            return { importedCount: 0, message: "No new snippets to import (all were duplicates)." };
+        const delayValue = target === "icebreaker" ? CrmService.readDelays(data).priv : CrmService.readDelays(data).broad;
+        const rebuilt = CrmService.buildReplacementMessages(messages, unique, delayValue);
+
+        if (CrmService.messagesEquivalent(messages, rebuilt)) {
+            CrmService.recordImportHistory(profileId, {
+                result: "no-change",
+                target,
+                linesEntered,
+                uniqueSnippets: unique.length,
+                previousMessageCount,
+                finalMessageCount: previousMessageCount,
+                duplicatesSkipped,
+            });
+            return base({
+                outcome: "no-change",
+                previousMessageCount,
+                finalMessageCount: previousMessageCount,
+                message: "No changes applied — the target list already matches the entered snippets.",
+            });
         }
 
+        // Immutable deep copy of the original target collection for rollback.
+        const originalCollection = CrmService.deepCopyCollection(messages);
+
+        CrmService.replaceTargetMessages(data, target, rebuilt);
         CrmService.writeProfile(key, data);
 
-        const profileKey = key.replace("chat-sender-", "");
-        import("./dev").then(({ addImportHistory }) => {
+        const verified = CrmService.verifyReplacement(CrmService.readProfile(key), target, rebuilt);
+        if (!verified) {
+            const rollbackRestored = CrmService.rollbackTargetCollection(key, target, originalCollection, previousMessageCount);
+            CrmService.recordImportHistory(profileId, {
+                result: "failed",
+                target,
+                linesEntered,
+                uniqueSnippets: unique.length,
+                previousMessageCount,
+                finalMessageCount: 0,
+                duplicatesSkipped,
+            });
+            const message = rollbackRestored
+                ? "Storage write verification failed. The original messages were restored."
+                : "Storage write verification failed AND the original messages could not be restored. Manual recovery is required.";
+            return base({ message });
+        }
+
+        const finalMessageCount = Object.keys(rebuilt).length;
+        CrmService.recordImportHistory(profileId, {
+            result: "success",
+            target,
+            linesEntered,
+            uniqueSnippets: unique.length,
+            previousMessageCount,
+            finalMessageCount,
+            duplicatesSkipped,
+        });
+
+        return base({
+            outcome: "success",
+            previousMessageCount,
+            finalMessageCount,
+            message: `${targetName} snippets updated.\n\nLines entered: ${linesEntered}\nUnique snippets: ${unique.length}\nMessages replaced: ${previousMessageCount}\nMessages created: ${finalMessageCount}\nDuplicate lines skipped: ${duplicatesSkipped}\nFinal message count: ${finalMessageCount}`,
+        });
+    }
+
+    /** Resolve the target messages collection, or undefined when the target container is missing. */
+    private static getTargetMessages(data: Record<string, unknown>, target: "icebreaker" | "broadcast"): Record<string, unknown> | undefined {
+        if (target === "icebreaker") {
+            const messages = (data as any).messages;
+            return messages && typeof messages === "object" && !Array.isArray(messages) ? (messages as Record<string, unknown>) : undefined;
+        }
+        const broadcast = (data as any).broadcast;
+        if (!broadcast || typeof broadcast !== "object" || Array.isArray(broadcast)) return undefined;
+        const messages = (broadcast as any).messages;
+        return messages && typeof messages === "object" && !Array.isArray(messages) ? (messages as Record<string, unknown>) : undefined;
+    }
+
+    /** Replace the target messages collection with the rebuilt collection. */
+    private static replaceTargetMessages(data: Record<string, unknown>, target: "icebreaker" | "broadcast", rebuilt: Record<string, unknown>): void {
+        if (target === "icebreaker") {
+            (data as any).messages = rebuilt;
+        } else {
+            ((data as any).broadcast as any).messages = rebuilt;
+        }
+    }
+
+    /**
+     * Build the replacement collection: sequential keys "1".."N", canonical
+     * { text, intervalSeconds } schema, first message delay 0, later messages
+     * use the detected target delay value. No runtime/progress fields copied.
+     */
+    private static buildReplacementMessages(messages: Record<string, unknown>, snippets: string[], delayValue: number): Record<string, unknown> {
+        const textProp = CrmService.detectTextProperty(messages);
+        const delayProp = CrmService.detectDelayProperty(messages) ?? "intervalSeconds";
+        const rebuilt: Record<string, unknown> = {};
+        snippets.forEach((snippet, index) => {
+            rebuilt[String(index + 1)] = {
+                [textProp]: snippet,
+                [delayProp]: index === 0 ? 0 : delayValue,
+            } as Record<string, unknown>;
+        });
+        return rebuilt;
+    }
+
+    /** Canonical snapshot used for equivalence and verification: ordered by numeric key, text and delay only. */
+    private static canonicalSnapshot(messages: Record<string, unknown>): unknown[] {
+        const textProp = CrmService.detectTextProperty(messages);
+        const delayProp = CrmService.detectDelayProperty(messages) ?? "intervalSeconds";
+        return Object.keys(messages)
+            .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
+            .map((key) => {
+                const item = messages[key];
+                if (!item || typeof item !== "object") return { key, text: undefined, delay: undefined };
+                return { key, text: (item as any)[textProp], delay: (item as any)[delayProp] };
+            });
+    }
+
+    /** True when both collections carry identical sequential keys, text order, canonical fields, and delay values. */
+    private static messagesEquivalent(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+        return JSON.stringify(CrmService.canonicalSnapshot(a)) === JSON.stringify(CrmService.canonicalSnapshot(b));
+    }
+
+    private static deepCopyCollection(messages: Record<string, unknown>): Record<string, unknown> {
+        return JSON.parse(JSON.stringify(messages)) as Record<string, unknown>;
+    }
+
+    /** Read the persisted profile back and confirm the target collection matches the expected rebuilt collection. */
+    private static verifyReplacement(saved: Record<string, unknown> | null, target: "icebreaker" | "broadcast", expected: Record<string, unknown>): boolean {
+        if (!saved || !CrmService.validateProfile(saved)) return false;
+        const messages = CrmService.getTargetMessages(saved, target);
+        if (messages === undefined) return false;
+        return CrmService.messagesEquivalent(messages, expected);
+    }
+
+    /** Restore the original target collection after a failed verification. Returns true only when the restore is confirmed. */
+    private static rollbackTargetCollection(key: string, target: "icebreaker" | "broadcast", original: Record<string, unknown>, previousCount: number): boolean {
+        const data = CrmService.readProfile(key);
+        if (!data || !CrmService.validateProfile(data)) return false;
+        if (target === "icebreaker") {
+            (data as any).messages = original;
+        } else {
+            const broadcast = (data as any).broadcast;
+            if (!broadcast || typeof broadcast !== "object" || Array.isArray(broadcast)) return false;
+            (broadcast as any).messages = original;
+        }
+        CrmService.writeProfile(key, data);
+        const saved = CrmService.readProfile(key);
+        const messages = saved ? CrmService.getTargetMessages(saved, target) : undefined;
+        if (messages === undefined) return false;
+        return Object.keys(messages).length === previousCount;
+    }
+
+    /** Record an import history entry through the static dev import. Best-effort, never throws. */
+    private static recordImportHistory(
+        profileId: string,
+        entry: Omit<ImportHistoryEntry, "timestamp" | "profileKey" | "importedCount"> & { result: "success" | "no-change" | "failed" },
+    ): void {
+        try {
             addImportHistory({
                 timestamp: new Date().toISOString(),
-                profileKey,
-                importedCount,
-                result: "success",
+                profileKey: profileId,
+                importedCount: entry.result === "success" ? (entry.finalMessageCount ?? 0) : 0,
+                ...entry,
             });
-        }).catch(() => { /* ignore */ });
-
-        const targetName = target === "icebreaker" ? "IceBreaker" : "Broadcast";
-        return { importedCount, message: `Imported ${importedCount} snippets to ${targetName}.` };
+        } catch { /* history is best-effort */ }
     }
 }

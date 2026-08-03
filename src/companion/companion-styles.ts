@@ -405,6 +405,30 @@ export const COMPANION_STYLES_CSS = `
     margin-bottom: 8px;
 }
 
+.ab-import-warning {
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: #fcd34d;
+    font-size: 12px;
+    line-height: 1.45;
+    margin-bottom: 8px;
+}
+
+.ab-import-error {
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(220, 38, 38, 0.12);
+    border: 1px solid rgba(220, 38, 38, 0.4);
+    color: #fca5a5;
+    font-size: 12px;
+    line-height: 1.45;
+    margin-bottom: 8px;
+}
+
+.ab-import-error[hidden] { display: none; }
+
 .ab-btn-import {
     padding: 12px 16px;
     font-size: 13px;
@@ -456,13 +480,48 @@ export const COMPANION_STYLES_CSS = `
     color: #fecaca;
 }
 
-/* Textarea */
+/* Textarea with line-number gutter */
+.ab-import-editor {
+    display: flex;
+    border: 1px solid var(--ab-border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ab-import-editor:focus-within {
+    border-color: var(--ab-accent);
+    box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.15);
+}
+.ab-import-editor.ab-import-editor-error {
+    border-color: rgba(220, 38, 38, 0.7);
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
+}
+
+.ab-import-gutter {
+    width: 40px;
+    flex-shrink: 0;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.04);
+    border-right: 1px solid var(--ab-border);
+    text-align: right;
+}
+
+.ab-import-gutter-numbers {
+    padding: 14px 8px 14px 0;
+    color: var(--ab-text-dim);
+    font-family: var(--ab-font);
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre;
+    will-change: transform;
+    user-select: none;
+}
+
 .ab-import-textarea {
     width: 100%;
     min-height: 260px;
     padding: 14px;
-    border-radius: 10px;
-    border: 1px solid var(--ab-border);
+    border: none;
     background: var(--ab-bg-card);
     color: var(--ab-text);
     font-family: var(--ab-font);
@@ -471,15 +530,10 @@ export const COMPANION_STYLES_CSS = `
     box-sizing: border-box;
     resize: none;
     outline: none;
-    transition: border-color 0.15s, box-shadow 0.15s;
 }
 .ab-import-textarea::placeholder {
     color: var(--ab-text-dim);
     opacity: 0.7;
-}
-.ab-import-textarea:focus {
-    border-color: var(--ab-accent);
-    box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.15);
 }
 
 /* Custom scrollbar for textarea */

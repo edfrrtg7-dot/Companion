@@ -115,13 +115,14 @@ function renderActionsSection(container: HTMLElement, onFinanceClick: () => void
         if (!result) return;
 
         const { snippets, target } = result;
-        const importResult = CrmService.importSnippetsToProfile(target, snippets);
-        if (importResult.importedCount > 0) {
+        const importResult = await CrmService.importSnippetsToProfile(target, snippets, {
+            confirmReplace: async (message) => showConfirm(message, "Replace", "Cancel"),
+        });
+        if (importResult.outcome === "success") {
             updateDashboard();
-            await showAlert(importResult.message);
-        } else {
-            await showAlert(importResult.message);
         }
+        const reportHtml = importResult.message.replace(/\n/g, "<br>");
+        await showAlert(reportHtml);
     });
     row2.appendChild(importBtn);
 

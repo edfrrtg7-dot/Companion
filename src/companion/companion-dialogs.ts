@@ -51,8 +51,8 @@ export function showAlert(msgHtml: string): Promise<void> {
     });
 }
 
-/** Show a confirmation dialog with Yes/No buttons. */
-export function showConfirm(msgHtml: string): Promise<boolean> {
+/** Show a confirmation dialog with configurable Yes/No labels. */
+export function showConfirm(msgHtml: string, confirmLabel = "Yes", cancelLabel = "No"): Promise<boolean> {
     return new Promise((resolve) => {
         const overlay = createDialogOverlay();
         overlay.innerHTML = `
@@ -64,8 +64,8 @@ export function showConfirm(msgHtml: string): Promise<boolean> {
                     ${msgHtml}
                 </div>
                 <div class="ab-content" style="padding-top: 0; display:flex; gap:10px;">
-                    <button class="ab-btn primary" id="ab-confirm-yes">Yes</button>
-                    <button class="ab-btn" id="ab-confirm-no">No</button>
+                    <button class="ab-btn primary" id="ab-confirm-yes">${confirmLabel}</button>
+                    <button class="ab-btn" id="ab-confirm-no">${cancelLabel}</button>
                 </div>
             </div>
         `;
@@ -108,21 +108,54 @@ export function showImportSnippetsModal(): Promise<ImportSnippetsResult | null> 
                             Import to Broadcast
                         </button>
                     </div>
+                    <div class="ab-import-warning" id="ab-import-warning">
+                        Pasting snippets will replace the current message list of the selected target.
+                    </div>
                     <label style="display:block; margin-bottom:6px; font-size:12px; color:var(--ab-text-dim); font-weight:500;">
                         Paste snippets (one per line):
                     </label>
-                    <textarea class="ab-import-textarea" id="ab-import-textarea" 
-                        placeholder="Snippet 1
+                    <div class="ab-import-editor" id="ab-import-editor">
+                        <div class="ab-import-gutter" id="ab-import-gutter">
+                            <div class="ab-import-gutter-numbers" id="ab-import-gutter-numbers">1</div>
+                        </div>
+                        <textarea class="ab-import-textarea" id="ab-import-textarea" 
+                            placeholder="Snippet 1
 Snippet 2
 Snippet 3
 ..."></textarea>
+                    </div>
+                    <div class="ab-import-error" id="ab-import-error" hidden>
+                        Please paste at least one non-empty snippet before importing.
+                    </div>
                     <button class="ab-btn ab-btn-cancel" id="ab-import-cancel">Cancel</button>
                 </div>
             </div>
         `;
 
         const textarea = document.getElementById("ab-import-textarea") as HTMLTextAreaElement;
+        const gutterNumbers = document.getElementById("ab-import-gutter-numbers") as HTMLDivElement;
+        const errorBox = document.getElementById("ab-import-error") as HTMLDivElement;
+        const editor = document.getElementById("ab-import-editor") as HTMLDivElement;
         textarea.focus();
+
+        const updateLineNumbers = (): void => {
+            const count = Math.max(1, textarea.value.split("\n").length);
+            gutterNumbers.textContent = Array.from({ length: count }, (_, i) => String(i + 1)).join("\n");
+            gutterNumbers.style.transform = "translateY(0px)";
+            if (errorBox.hidden === false) {
+                errorBox.hidden = true;
+                editor.classList.remove("ab-import-editor-error");
+            }
+        };
+
+        const syncGutterScroll = (): void => {
+            gutterNumbers.style.transform = `translateY(${-textarea.scrollTop}px)`;
+        };
+
+        const onInput = (): void => updateLineNumbers();
+        const onScroll = (): void => syncGutterScroll();
+        textarea.addEventListener("input", onInput);
+        textarea.addEventListener("scroll", onScroll);
 
         const parseSnippets = (): string[] => {
             return textarea.value
@@ -131,22 +164,29 @@ Snippet 3
                 .filter(l => l.length > 0);
         };
 
+        const confirmImport = (target: "icebreaker" | "broadcast"): void => {
+            const snippets = parseSnippets();
+            if (snippets.length === 0) {
+                errorBox.hidden = false;
+                editor.classList.add("ab-import-editor-error");
+                textarea.focus();
+                return;
+            }
+            textarea.removeEventListener("input", onInput);
+            textarea.removeEventListener("scroll", onScroll);
+            closeDialogOverlay(overlay);
+            resolve({ snippets, target });
+        };
+
         document.getElementById("ab-import-cancel")!.onclick = () => {
+            textarea.removeEventListener("input", onInput);
+            textarea.removeEventListener("scroll", onScroll);
             closeDialogOverlay(overlay);
             resolve(null);
         };
 
-        document.getElementById("ab-import-icebreaker")!.onclick = () => {
-            const snippets = parseSnippets();
-            closeDialogOverlay(overlay);
-            resolve({ snippets, target: "icebreaker" });
-        };
-
-        document.getElementById("ab-import-broadcast")!.onclick = () => {
-            const snippets = parseSnippets();
-            closeDialogOverlay(overlay);
-            resolve({ snippets, target: "broadcast" });
-        };
+        document.getElementById("ab-import-icebreaker")!.onclick = () => confirmImport("icebreaker");
+        document.getElementById("ab-import-broadcast")!.onclick = () => confirmImport("broadcast");
     });
 }
 

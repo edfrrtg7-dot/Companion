@@ -12,18 +12,11 @@
     "use strict";
 (() => {
   var __defProp = Object.defineProperty;
-  var __getOwnPropNames = Object.getOwnPropertyNames;
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-  var __esm = (fn, res) => function __init() {
-    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
-  };
-  var __export = (target, all) => {
-    for (var name in all)
-      __defProp(target, name, { get: all[name], enumerable: true });
-  };
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
   // ../src/companion/platform-interface.ts
+  var currentPlatform;
   function getPlatform() {
     if (!currentPlatform) {
       throw new Error("Platform not initialized. Call setPlatform() during bootstrap.");
@@ -33,381 +26,8 @@
   function setPlatform(platform) {
     currentPlatform = platform;
   }
-  var currentPlatform;
-  var init_platform_interface = __esm({
-    "../src/companion/platform-interface.ts"() {
-    }
-  });
-
-  // ../src/companion/storage-adapter.ts
-  var LocalStorageAdapter, ChromeStorageAdapter;
-  var init_storage_adapter = __esm({
-    "../src/companion/storage-adapter.ts"() {
-      init_platform_interface();
-      LocalStorageAdapter = class {
-        constructor() {
-          __publicField(this, "readyPromise", Promise.resolve());
-        }
-        get(key) {
-          try {
-            return getPlatform().localStorage.getItem(key);
-          } catch {
-            return null;
-          }
-        }
-        set(key, value) {
-          try {
-            getPlatform().localStorage.setItem(key, value);
-          } catch {
-          }
-        }
-        remove(key) {
-          try {
-            getPlatform().localStorage.removeItem(key);
-          } catch {
-          }
-        }
-        clear() {
-          try {
-            getPlatform().localStorage.clear();
-          } catch {
-          }
-        }
-        exists(key) {
-          try {
-            return getPlatform().localStorage.getItem(key) !== null;
-          } catch {
-            return false;
-          }
-        }
-      };
-      ChromeStorageAdapter = class {
-        constructor() {
-          __publicField(this, "cache", /* @__PURE__ */ new Map());
-          __publicField(this, "ready", false);
-          __publicField(this, "readyResolver", null);
-          __publicField(this, "readyPromise");
-          this.readyPromise = new Promise((resolve) => {
-            this.readyResolver = resolve;
-          });
-          this.hydrate();
-        }
-        /**
-         * Hydrate cache from chrome.storage.local.
-         * This is async but we don't await it — the cache starts empty
-         * and gets populated in the background. Subsequent get() calls
-         * will return from cache once hydrated.
-         */
-        hydrate() {
-          const cs = getPlatform().chromeStorage;
-          if (cs) {
-            cs.getAll().then((all) => {
-              for (const [key, value] of Object.entries(all)) {
-                if (typeof value === "string") {
-                  this.cache.set(key, value);
-                }
-              }
-              this.ready = true;
-              this.readyResolver?.();
-            }).catch(() => {
-              this.ready = true;
-              this.readyResolver?.();
-            });
-          } else {
-            this.ready = true;
-            this.readyResolver?.();
-          }
-        }
-        get(key) {
-          return this.cache.get(key) ?? null;
-        }
-        set(key, value) {
-          this.cache.set(key, value);
-          this.persist(key, value);
-        }
-        remove(key) {
-          this.cache.delete(key);
-          this.persistRemove(key);
-        }
-        clear() {
-          this.cache.clear();
-          this.persistClear();
-        }
-        exists(key) {
-          return this.cache.has(key);
-        }
-        /** Whether the cache has been hydrated from chrome.storage. */
-        get isReady() {
-          return this.ready;
-        }
-        persist(key, value) {
-          try {
-            getPlatform().chromeStorage?.set(key, value);
-          } catch {
-          }
-        }
-        persistRemove(key) {
-          try {
-            getPlatform().chromeStorage?.remove(key);
-          } catch {
-          }
-        }
-        persistClear() {
-          try {
-            getPlatform().chromeStorage?.clear();
-          } catch {
-          }
-        }
-      };
-    }
-  });
-
-  // ../src/companion/storage-service.ts
-  function initStorage() {
-    if (adapter) {
-      return adapter.readyPromise;
-    }
-    if (getPlatform().chromeStorage) {
-      adapter = new ChromeStorageAdapter();
-    } else {
-      adapter = new LocalStorageAdapter();
-    }
-    return adapter.readyPromise;
-  }
-  function getAdapter() {
-    if (!adapter) {
-      initStorage();
-    }
-    return adapter;
-  }
-  async function waitForStorageReady() {
-    if (!adapter) {
-      await initStorage();
-    } else {
-      await adapter.readyPromise;
-    }
-  }
-  var adapter, StorageService;
-  var init_storage_service = __esm({
-    "../src/companion/storage-service.ts"() {
-      init_storage_adapter();
-      init_platform_interface();
-      adapter = null;
-      StorageService = {
-        /**
-         * Read a value by key.
-         * @param key - Storage key from STORAGE_KEYS
-         * @returns The stored value, or null if not found
-         */
-        get(key) {
-          return getAdapter().get(key);
-        },
-        /**
-         * Write a value by key.
-         * @param key - Storage key from STORAGE_KEYS
-         * @param value - Value to store
-         */
-        set(key, value) {
-          getAdapter().set(key, value);
-        },
-        /**
-         * Remove a value by key.
-         * @param key - Storage key from STORAGE_KEYS
-         */
-        remove(key) {
-          getAdapter().remove(key);
-        },
-        /** Remove all stored values. Use with caution. */
-        clear() {
-          getAdapter().clear();
-        },
-        /**
-         * Check if a key exists.
-         * @param key - Storage key from STORAGE_KEYS
-         * @returns true if the key exists
-         */
-        exists(key) {
-          return getAdapter().exists(key);
-        },
-        /**
-         * Get the active adapter type.
-         * Useful for diagnostics.
-         */
-        getAdapterType() {
-          if (getPlatform().chromeStorage) {
-            return "chrome.storage.local";
-          }
-          return "localStorage";
-        }
-      };
-    }
-  });
-
-  // ../src/companion/storage-keys.ts
-  var STORAGE_KEYS;
-  var init_storage_keys = __esm({
-    "../src/companion/storage-keys.ts"() {
-      STORAGE_KEYS = {
-        /** Finance widget window state (position, size, collapsed, hidden). */
-        COMPANION_WINDOW_STATE: "ab-companion-window-state",
-        /** Finance widget unified state (position, size, collapsed, hidden, shift). Single authoritative source. */
-        FINANCE_WIDGET_STATE: "ab-finance-widget-state",
-        /** Legacy Finance state key — held the shift preset before unification. Removed by migration v1→v2. */
-        FINANCE_STATE: "ab-finance-state",
-        /** Legacy AgencyBooster widget state key (pre-Companion). Migrated to FINANCE_WIDGET_STATE. */
-        LEGACY_FINANCE_WIDGET: "agencybooster-finance-widget",
-        /** Legacy AgencyBooster shift preset key (pre-Companion). Migrated to FINANCE_WIDGET_STATE. */
-        LEGACY_FINANCE_PRESET: "agencybooster-finance-preset",
-        /** Development mode flag. */
-        DEV_MODE: "ab-dev",
-        /** Settings module preferences (future). */
-        SETTINGS: "ab-settings",
-        /** Active tab in the Companion modal. */
-        COMPANION_ACTIVE_TAB: "ab-companion-active-tab",
-        /** Storage version marker. */
-        STORAGE_VERSION: "ab-storage-version",
-        /** Diagnostics error history. */
-        DIAGNOSTICS_ERROR_HISTORY: "ab-diag-error-history",
-        /** Diagnostics import history. */
-        DIAGNOSTICS_IMPORT_HISTORY: "ab-diag-import-history",
-        /** Session memory history (persistent between browser restarts). */
-        SESSION_MEMORY: "ab-session-memory"
-      };
-    }
-  });
-
-  // ../src/companion/dev.ts
-  var dev_exports = {};
-  __export(dev_exports, {
-    DiagnosticLevel: () => DiagnosticLevel,
-    addImportHistory: () => addImportHistory,
-    clearErrorHistory: () => clearErrorHistory,
-    clearImportHistory: () => clearImportHistory,
-    diag: () => diag,
-    diagDebug: () => diagDebug,
-    diagError: () => diagError,
-    diagWarn: () => diagWarn,
-    getErrorHistory: () => getErrorHistory,
-    getImportHistory: () => getImportHistory,
-    isDevMode: () => isDevMode
-  });
-  function loadErrorHistory() {
-    try {
-      const raw = StorageService.get(STORAGE_KEYS.DIAGNOSTICS_ERROR_HISTORY);
-      if (raw) return JSON.parse(raw);
-    } catch {
-    }
-    return [];
-  }
-  function saveErrorHistory(entries) {
-    try {
-      StorageService.set(STORAGE_KEYS.DIAGNOSTICS_ERROR_HISTORY, JSON.stringify(entries));
-    } catch {
-    }
-  }
-  function format(level, _args) {
-    const timestamp = (/* @__PURE__ */ new Date()).toISOString().slice(11, 23);
-    return `[Companion:${level}] ${timestamp}`;
-  }
-  function addErrorHistory(message, stack, source) {
-    const entries = loadErrorHistory();
-    entries.push({
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      message,
-      stack,
-      source
-    });
-    if (entries.length > MAX_ERROR_HISTORY) entries.shift();
-    saveErrorHistory(entries);
-  }
-  function diag(...args) {
-    if (isDevMode()) {
-      console.log(format("INFO" /* INFO */, args), ...args);
-    }
-  }
-  function diagWarn(...args) {
-    if (isDevMode()) {
-      console.warn(format("WARN" /* WARN */, args), ...args);
-    }
-  }
-  function diagError(...args) {
-    if (isDevMode()) {
-      console.error(format("ERROR" /* ERROR */, args), ...args);
-    }
-    const message = args.map((a) => a instanceof Error ? a.message : String(a)).join(" ");
-    const stack = args.find((a) => a instanceof Error)?.stack;
-    addErrorHistory(message, stack, "diagError");
-  }
-  function diagDebug(...args) {
-    if (isDevMode()) {
-      console.debug(format("DEBUG" /* DEBUG */, args), ...args);
-    }
-  }
-  function isDevMode() {
-    try {
-      return StorageService.get(STORAGE_KEYS.DEV_MODE) !== null;
-    } catch {
-      try {
-        return localStorage.getItem(STORAGE_KEYS.DEV_MODE) !== null;
-      } catch {
-        return false;
-      }
-    }
-  }
-  function getErrorHistory() {
-    return loadErrorHistory();
-  }
-  function clearErrorHistory() {
-    saveErrorHistory([]);
-  }
-  function loadImportHistory() {
-    try {
-      const raw = StorageService.get(STORAGE_KEYS.DIAGNOSTICS_IMPORT_HISTORY);
-      if (raw) return JSON.parse(raw);
-    } catch {
-    }
-    return [];
-  }
-  function saveImportHistory(entries) {
-    try {
-      StorageService.set(STORAGE_KEYS.DIAGNOSTICS_IMPORT_HISTORY, JSON.stringify(entries));
-    } catch {
-    }
-  }
-  function addImportHistory(entry) {
-    const entries = loadImportHistory();
-    entries.push(entry);
-    if (entries.length > MAX_IMPORT_HISTORY) entries.shift();
-    saveImportHistory(entries);
-  }
-  function getImportHistory() {
-    return loadImportHistory();
-  }
-  function clearImportHistory() {
-    StorageService.remove(STORAGE_KEYS.DIAGNOSTICS_IMPORT_HISTORY);
-  }
-  var DiagnosticLevel, MAX_ERROR_HISTORY, MAX_IMPORT_HISTORY;
-  var init_dev = __esm({
-    "../src/companion/dev.ts"() {
-      init_storage_service();
-      init_storage_keys();
-      DiagnosticLevel = /* @__PURE__ */ ((DiagnosticLevel2) => {
-        DiagnosticLevel2["INFO"] = "INFO";
-        DiagnosticLevel2["WARN"] = "WARN";
-        DiagnosticLevel2["ERROR"] = "ERROR";
-        DiagnosticLevel2["DEBUG"] = "DEBUG";
-        return DiagnosticLevel2;
-      })(DiagnosticLevel || {});
-      MAX_ERROR_HISTORY = 20;
-      MAX_IMPORT_HISTORY = 20;
-    }
-  });
-
-  // ../src/companion/create-composition.ts
-  init_platform_interface();
 
   // ../src/companion/runtime-environment.ts
-  init_platform_interface();
   var currentRuntime;
   function getRuntimeEnvironment() {
     if (!currentRuntime) {
@@ -453,8 +73,309 @@
     }
   };
 
+  // ../src/companion/storage-adapter.ts
+  var LocalStorageAdapter = class {
+    constructor() {
+      __publicField(this, "readyPromise", Promise.resolve());
+    }
+    get(key) {
+      try {
+        return getPlatform().localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    }
+    set(key, value) {
+      try {
+        getPlatform().localStorage.setItem(key, value);
+      } catch {
+      }
+    }
+    remove(key) {
+      try {
+        getPlatform().localStorage.removeItem(key);
+      } catch {
+      }
+    }
+    clear() {
+      try {
+        getPlatform().localStorage.clear();
+      } catch {
+      }
+    }
+    exists(key) {
+      try {
+        return getPlatform().localStorage.getItem(key) !== null;
+      } catch {
+        return false;
+      }
+    }
+  };
+  var ChromeStorageAdapter = class {
+    constructor() {
+      __publicField(this, "cache", /* @__PURE__ */ new Map());
+      __publicField(this, "ready", false);
+      __publicField(this, "readyResolver", null);
+      __publicField(this, "readyPromise");
+      this.readyPromise = new Promise((resolve) => {
+        this.readyResolver = resolve;
+      });
+      this.hydrate();
+    }
+    /**
+     * Hydrate cache from chrome.storage.local.
+     * This is async but we don't await it — the cache starts empty
+     * and gets populated in the background. Subsequent get() calls
+     * will return from cache once hydrated.
+     */
+    hydrate() {
+      const cs = getPlatform().chromeStorage;
+      if (cs) {
+        cs.getAll().then((all) => {
+          for (const [key, value] of Object.entries(all)) {
+            if (typeof value === "string") {
+              this.cache.set(key, value);
+            }
+          }
+          this.ready = true;
+          this.readyResolver?.();
+        }).catch(() => {
+          this.ready = true;
+          this.readyResolver?.();
+        });
+      } else {
+        this.ready = true;
+        this.readyResolver?.();
+      }
+    }
+    get(key) {
+      return this.cache.get(key) ?? null;
+    }
+    set(key, value) {
+      this.cache.set(key, value);
+      this.persist(key, value);
+    }
+    remove(key) {
+      this.cache.delete(key);
+      this.persistRemove(key);
+    }
+    clear() {
+      this.cache.clear();
+      this.persistClear();
+    }
+    exists(key) {
+      return this.cache.has(key);
+    }
+    /** Whether the cache has been hydrated from chrome.storage. */
+    get isReady() {
+      return this.ready;
+    }
+    persist(key, value) {
+      try {
+        getPlatform().chromeStorage?.set(key, value);
+      } catch {
+      }
+    }
+    persistRemove(key) {
+      try {
+        getPlatform().chromeStorage?.remove(key);
+      } catch {
+      }
+    }
+    persistClear() {
+      try {
+        getPlatform().chromeStorage?.clear();
+      } catch {
+      }
+    }
+  };
+
+  // ../src/companion/storage-service.ts
+  var adapter = null;
+  function initStorage() {
+    if (adapter) {
+      return adapter.readyPromise;
+    }
+    if (getPlatform().chromeStorage) {
+      adapter = new ChromeStorageAdapter();
+    } else {
+      adapter = new LocalStorageAdapter();
+    }
+    return adapter.readyPromise;
+  }
+  function getAdapter() {
+    if (!adapter) {
+      initStorage();
+    }
+    return adapter;
+  }
+  async function waitForStorageReady() {
+    if (!adapter) {
+      await initStorage();
+    } else {
+      await adapter.readyPromise;
+    }
+  }
+  var StorageService = {
+    /**
+     * Read a value by key.
+     * @param key - Storage key from STORAGE_KEYS
+     * @returns The stored value, or null if not found
+     */
+    get(key) {
+      return getAdapter().get(key);
+    },
+    /**
+     * Write a value by key.
+     * @param key - Storage key from STORAGE_KEYS
+     * @param value - Value to store
+     */
+    set(key, value) {
+      getAdapter().set(key, value);
+    },
+    /**
+     * Remove a value by key.
+     * @param key - Storage key from STORAGE_KEYS
+     */
+    remove(key) {
+      getAdapter().remove(key);
+    },
+    /** Remove all stored values. Use with caution. */
+    clear() {
+      getAdapter().clear();
+    },
+    /**
+     * Check if a key exists.
+     * @param key - Storage key from STORAGE_KEYS
+     * @returns true if the key exists
+     */
+    exists(key) {
+      return getAdapter().exists(key);
+    },
+    /**
+     * Get the active adapter type.
+     * Useful for diagnostics.
+     */
+    getAdapterType() {
+      if (getPlatform().chromeStorage) {
+        return "chrome.storage.local";
+      }
+      return "localStorage";
+    }
+  };
+
+  // ../src/companion/storage-keys.ts
+  var STORAGE_KEYS = {
+    /** Finance widget window state (position, size, collapsed, hidden). */
+    COMPANION_WINDOW_STATE: "ab-companion-window-state",
+    /** Finance widget unified state (position, size, collapsed, hidden, shift). Single authoritative source. */
+    FINANCE_WIDGET_STATE: "ab-finance-widget-state",
+    /** Legacy Finance state key — held the shift preset before unification. Removed by migration v1→v2. */
+    FINANCE_STATE: "ab-finance-state",
+    /** Legacy AgencyBooster widget state key (pre-Companion). Migrated to FINANCE_WIDGET_STATE. */
+    LEGACY_FINANCE_WIDGET: "agencybooster-finance-widget",
+    /** Legacy AgencyBooster shift preset key (pre-Companion). Migrated to FINANCE_WIDGET_STATE. */
+    LEGACY_FINANCE_PRESET: "agencybooster-finance-preset",
+    /** Development mode flag. */
+    DEV_MODE: "ab-dev",
+    /** Settings module preferences (future). */
+    SETTINGS: "ab-settings",
+    /** Active tab in the Companion modal. */
+    COMPANION_ACTIVE_TAB: "ab-companion-active-tab",
+    /** Storage version marker. */
+    STORAGE_VERSION: "ab-storage-version",
+    /** Diagnostics error history. */
+    DIAGNOSTICS_ERROR_HISTORY: "ab-diag-error-history",
+    /** Diagnostics import history. */
+    DIAGNOSTICS_IMPORT_HISTORY: "ab-diag-import-history",
+    /** Session memory history (persistent between browser restarts). */
+    SESSION_MEMORY: "ab-session-memory"
+  };
+
+  // ../src/companion/dev.ts
+  var MAX_ERROR_HISTORY = 20;
+  function loadErrorHistory() {
+    try {
+      const raw = StorageService.get(STORAGE_KEYS.DIAGNOSTICS_ERROR_HISTORY);
+      if (raw) return JSON.parse(raw);
+    } catch {
+    }
+    return [];
+  }
+  function saveErrorHistory(entries) {
+    try {
+      StorageService.set(STORAGE_KEYS.DIAGNOSTICS_ERROR_HISTORY, JSON.stringify(entries));
+    } catch {
+    }
+  }
+  function format(level, _args) {
+    const timestamp = (/* @__PURE__ */ new Date()).toISOString().slice(11, 23);
+    return `[Companion:${level}] ${timestamp}`;
+  }
+  function addErrorHistory(message, stack, source) {
+    const entries = loadErrorHistory();
+    entries.push({
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      message,
+      stack,
+      source
+    });
+    if (entries.length > MAX_ERROR_HISTORY) entries.shift();
+    saveErrorHistory(entries);
+  }
+  function diag(...args) {
+    if (isDevMode()) {
+      console.log(format("INFO" /* INFO */, args), ...args);
+    }
+  }
+  function diagError(...args) {
+    if (isDevMode()) {
+      console.error(format("ERROR" /* ERROR */, args), ...args);
+    }
+    const message = args.map((a) => a instanceof Error ? a.message : String(a)).join(" ");
+    const stack = args.find((a) => a instanceof Error)?.stack;
+    addErrorHistory(message, stack, "diagError");
+  }
+  function isDevMode() {
+    try {
+      return StorageService.get(STORAGE_KEYS.DEV_MODE) !== null;
+    } catch {
+      try {
+        return localStorage.getItem(STORAGE_KEYS.DEV_MODE) !== null;
+      } catch {
+        return false;
+      }
+    }
+  }
+  function getErrorHistory() {
+    return loadErrorHistory();
+  }
+  var MAX_IMPORT_HISTORY = 20;
+  function loadImportHistory() {
+    try {
+      const raw = StorageService.get(STORAGE_KEYS.DIAGNOSTICS_IMPORT_HISTORY);
+      if (raw) return JSON.parse(raw);
+    } catch {
+    }
+    return [];
+  }
+  function saveImportHistory(entries) {
+    try {
+      StorageService.set(STORAGE_KEYS.DIAGNOSTICS_IMPORT_HISTORY, JSON.stringify(entries));
+    } catch {
+    }
+  }
+  function addImportHistory(entry) {
+    const entries = loadImportHistory();
+    entries.push(entry);
+    if (entries.length > MAX_IMPORT_HISTORY) entries.shift();
+    saveImportHistory(entries);
+  }
+  function getImportHistory() {
+    return loadImportHistory();
+  }
+
   // ../src/companion/launcher-diagnostics.ts
-  init_dev();
   var LauncherDiagnostics = class {
     constructor() {
       __publicField(this, "stages", []);
@@ -1690,8 +1611,6 @@
   };
 
   // ../src/companion/finance-shift.ts
-  init_storage_service();
-  init_storage_keys();
   var SHIFT_DEFINITIONS = /* @__PURE__ */ new Map([
     [
       "morning",
@@ -2190,8 +2109,6 @@
   };
 
   // ../src/companion/companion-window.ts
-  init_storage_service();
-  init_dev();
   var DEFAULT_CLASS_PREFIX = "ab-window";
   var MIN_WIDTH = 280;
   var MIN_HEIGHT = 200;
@@ -2694,8 +2611,6 @@
   var COMPANION_LOGO_DATA_URI = `data:image/svg+xml,${encodeURIComponent(COMPANION_LOGO_SVG)}`;
 
   // ../src/companion/finance-widget.ts
-  init_storage_keys();
-  init_dev();
   var DEFAULT_CLASS_PREFIX2 = "ab-finance";
   var STORAGE_KEY2 = STORAGE_KEYS.FINANCE_WIDGET_STATE;
   var DEFAULT_STATE = {
@@ -4357,120 +4272,255 @@
       return null;
     }
     /**
-     * Import snippets into a messages container using canonical message structure.
-     * - Detects text/delay properties from existing messages
-     * - Uses first existing message as template
-     * - Generates sequential numeric IDs (1, 2, 3...)
-     * - Sets first message delay to 0, subsequent to detected delay value
-     * @param messages - The messages object to import into (IceBreaker or Broadcast)
-     * @param snippets - Array of snippet texts to import
-     * @returns Number of snippets actually imported (after deduplication)
+     * Normalize raw textarea lines into an ordered, deduplicated snippet list.
+     * Pure function: trims each line, drops empty lines, keeps the first
+     * occurrence of duplicated text (case-sensitive compare), and counts the
+     * duplicates that were skipped. Performs no storage, profile, history,
+     * or UI access.
      */
-    static importSnippets(messages, snippets) {
-      if (!messages || typeof messages !== "object") return 0;
-      const existingTexts = /* @__PURE__ */ new Set();
-      for (const msg of Object.values(messages)) {
-        if (msg && typeof msg === "object") {
-          const textProp2 = Object.keys(msg).find((k) => typeof msg[k] === "string" && k !== "intervalSeconds" && k !== "delay" && k !== "interval" && k !== "timeout" && k !== "seconds");
-          if (textProp2 && msg[textProp2]) {
-            existingTexts.add(msg[textProp2]);
-          }
+    static normalizeSnippets(lines) {
+      const seen = /* @__PURE__ */ new Set();
+      const unique = [];
+      let duplicatesSkipped = 0;
+      let linesEntered = 0;
+      for (const raw of lines) {
+        const trimmed = String(raw).trim();
+        if (trimmed.length === 0) continue;
+        linesEntered++;
+        if (seen.has(trimmed)) {
+          duplicatesSkipped++;
+        } else {
+          seen.add(trimmed);
+          unique.push(trimmed);
         }
       }
-      const textProp = _CrmService.detectTextProperty(messages);
-      const delayProp = _CrmService.detectDelayProperty(messages) ?? "intervalSeconds";
-      const template = Object.values(messages)[0];
-      let nextId = 1;
-      for (const key of Object.keys(messages)) {
-        const num = parseInt(key, 10);
-        if (!isNaN(num) && num >= nextId) {
-          nextId = num + 1;
-        }
-      }
-      let delayValue = 60;
-      if (template && typeof template === "object" && delayProp in template) {
-        const templateDelay = template[delayProp];
-        if (typeof templateDelay === "number" && templateDelay > 0) {
-          delayValue = templateDelay;
-        }
-      }
-      let importedCount = 0;
-      for (const snippet of snippets) {
-        if (!existingTexts.has(snippet)) {
-          const id = String(nextId++);
-          const newMsg = template ? { ...template } : {};
-          newMsg[textProp] = snippet;
-          newMsg[delayProp] = importedCount === 0 ? 0 : delayValue;
-          messages[id] = newMsg;
-          existingTexts.add(snippet);
-          importedCount++;
-        }
-      }
-      return importedCount;
+      return { linesEntered, unique, duplicatesSkipped };
     }
     /**
-     * Import snippets into a profile (IceBreaker or Broadcast).
-     * Handles profile lookup, validation, storage update, and history logging.
-     * @param target - "icebreaker" or "broadcast"
-     * @param snippets - Array of snippet texts to import
-     * @returns Result object with importedCount and message
+     * Import snippets into a profile (IceBreaker or Broadcast) using
+     * deterministic replacement semantics.
+     *
+     * The pasted snippet list is treated as the authoritative, ordered
+     * message collection. The target collection is rebuilt from scratch with
+     * sequential keys "1".."N" and the canonical { text, intervalSeconds }
+     * message schema, preserving the currently configured target delay.
+     *
+     * Flow: fresh profile read -> count current target messages -> optional
+     * confirmation gate -> re-read profile after confirmation -> delay
+     * detection -> sequential rebuild -> canonical no-change compare -> one
+     * atomic write -> read-back verification -> rollback on failure.
+     *
+     * History is recorded through a static import of addImportHistory and is
+     * deterministic for success / no-change / failed outcomes. Cancelled
+     * operations record nothing and never touch storage.
      */
-    static importSnippetsToProfile(target, snippets) {
-      if (snippets.length === 0) {
-        return { importedCount: 0, message: "No valid snippets to import." };
+    static async importSnippetsToProfile(target, snippets, options = {}) {
+      const targetName = target === "icebreaker" ? "IceBreaker" : "Broadcast";
+      const { linesEntered, unique, duplicatesSkipped } = _CrmService.normalizeSnippets(snippets);
+      const base = (overrides) => ({
+        outcome: "failure",
+        targetName,
+        linesEntered,
+        uniqueSnippets: unique.length,
+        previousMessageCount: 0,
+        finalMessageCount: 0,
+        duplicatesSkipped,
+        message: "",
+        ...overrides
+      });
+      if (unique.length === 0) {
+        return base({ message: "No valid snippets entered. Existing messages were not changed." });
       }
       const key = _CrmService.findProfileKey();
       if (!key) {
-        return { importedCount: 0, message: "No CRM profile found." };
+        return base({ message: "No CRM profile found." });
+      }
+      const profileId = key.replace(CRM_STORAGE_PREFIX, "");
+      const initial = _CrmService.readProfile(key);
+      if (!initial || !_CrmService.validateProfile(initial)) {
+        return base({ message: "Invalid profile structure." });
+      }
+      const initialMessages = _CrmService.getTargetMessages(initial, target);
+      if (initialMessages === void 0) {
+        return base({ message: "Target collection not found in profile." });
+      }
+      const previousMessageCount = Object.keys(initialMessages).length;
+      if (previousMessageCount > 0 && options.confirmReplace) {
+        const confirmed = await options.confirmReplace(
+          `${targetName} currently has ${previousMessageCount} message(s).
+
+Replacing them will remove ${previousMessageCount} existing message(s) and rebuild the list from your snippets.`
+        );
+        if (!confirmed) {
+          return base({
+            outcome: "cancelled",
+            previousMessageCount,
+            finalMessageCount: previousMessageCount,
+            message: "Import cancelled. Existing messages were not changed."
+          });
+        }
       }
       const data = _CrmService.readProfile(key);
       if (!data || !_CrmService.validateProfile(data)) {
-        return { importedCount: 0, message: "Invalid profile structure." };
+        return base({ message: "Invalid profile structure." });
       }
-      let importedCount = 0;
-      const profileData = data;
+      const messages = _CrmService.getTargetMessages(data, target);
+      if (messages === void 0) {
+        return base({ message: "Target collection not found in profile." });
+      }
+      const delayValue = target === "icebreaker" ? _CrmService.readDelays(data).priv : _CrmService.readDelays(data).broad;
+      const rebuilt = _CrmService.buildReplacementMessages(messages, unique, delayValue);
+      if (_CrmService.messagesEquivalent(messages, rebuilt)) {
+        _CrmService.recordImportHistory(profileId, {
+          result: "no-change",
+          target,
+          linesEntered,
+          uniqueSnippets: unique.length,
+          previousMessageCount,
+          finalMessageCount: previousMessageCount,
+          duplicatesSkipped
+        });
+        return base({
+          outcome: "no-change",
+          previousMessageCount,
+          finalMessageCount: previousMessageCount,
+          message: "No changes applied \u2014 the target list already matches the entered snippets."
+        });
+      }
+      const originalCollection = _CrmService.deepCopyCollection(messages);
+      _CrmService.replaceTargetMessages(data, target, rebuilt);
+      _CrmService.writeProfile(key, data);
+      const verified = _CrmService.verifyReplacement(_CrmService.readProfile(key), target, rebuilt);
+      if (!verified) {
+        const rollbackRestored = _CrmService.rollbackTargetCollection(key, target, originalCollection, previousMessageCount);
+        _CrmService.recordImportHistory(profileId, {
+          result: "failed",
+          target,
+          linesEntered,
+          uniqueSnippets: unique.length,
+          previousMessageCount,
+          finalMessageCount: 0,
+          duplicatesSkipped
+        });
+        const message = rollbackRestored ? "Storage write verification failed. The original messages were restored." : "Storage write verification failed AND the original messages could not be restored. Manual recovery is required.";
+        return base({ message });
+      }
+      const finalMessageCount = Object.keys(rebuilt).length;
+      _CrmService.recordImportHistory(profileId, {
+        result: "success",
+        target,
+        linesEntered,
+        uniqueSnippets: unique.length,
+        previousMessageCount,
+        finalMessageCount,
+        duplicatesSkipped
+      });
+      return base({
+        outcome: "success",
+        previousMessageCount,
+        finalMessageCount,
+        message: `${targetName} snippets updated.
+
+Lines entered: ${linesEntered}
+Unique snippets: ${unique.length}
+Messages replaced: ${previousMessageCount}
+Messages created: ${finalMessageCount}
+Duplicate lines skipped: ${duplicatesSkipped}
+Final message count: ${finalMessageCount}`
+      });
+    }
+    /** Resolve the target messages collection, or undefined when the target container is missing. */
+    static getTargetMessages(data, target) {
       if (target === "icebreaker") {
-        if (!profileData.messages || typeof profileData.messages !== "object") {
-          profileData.messages = {};
-        }
-        importedCount = _CrmService.importSnippets(profileData.messages, snippets);
-      } else if (target === "broadcast") {
-        if (!profileData.broadcast || typeof profileData.broadcast !== "object") {
-          profileData.broadcast = {};
-        }
-        if (!profileData.broadcast.messages || typeof profileData.broadcast.messages !== "object") {
-          profileData.broadcast.messages = {};
-        }
-        importedCount = _CrmService.importSnippets(profileData.broadcast.messages, snippets);
-      } else {
-        return { importedCount: 0, message: "Target collection not found in profile." };
+        const messages2 = data.messages;
+        return messages2 && typeof messages2 === "object" && !Array.isArray(messages2) ? messages2 : void 0;
       }
-      if (importedCount === 0) {
-        return { importedCount: 0, message: "No new snippets to import (all were duplicates)." };
+      const broadcast = data.broadcast;
+      if (!broadcast || typeof broadcast !== "object" || Array.isArray(broadcast)) return void 0;
+      const messages = broadcast.messages;
+      return messages && typeof messages === "object" && !Array.isArray(messages) ? messages : void 0;
+    }
+    /** Replace the target messages collection with the rebuilt collection. */
+    static replaceTargetMessages(data, target, rebuilt) {
+      if (target === "icebreaker") {
+        data.messages = rebuilt;
+      } else {
+        data.broadcast.messages = rebuilt;
+      }
+    }
+    /**
+     * Build the replacement collection: sequential keys "1".."N", canonical
+     * { text, intervalSeconds } schema, first message delay 0, later messages
+     * use the detected target delay value. No runtime/progress fields copied.
+     */
+    static buildReplacementMessages(messages, snippets, delayValue) {
+      const textProp = _CrmService.detectTextProperty(messages);
+      const delayProp = _CrmService.detectDelayProperty(messages) ?? "intervalSeconds";
+      const rebuilt = {};
+      snippets.forEach((snippet, index) => {
+        rebuilt[String(index + 1)] = {
+          [textProp]: snippet,
+          [delayProp]: index === 0 ? 0 : delayValue
+        };
+      });
+      return rebuilt;
+    }
+    /** Canonical snapshot used for equivalence and verification: ordered by numeric key, text and delay only. */
+    static canonicalSnapshot(messages) {
+      const textProp = _CrmService.detectTextProperty(messages);
+      const delayProp = _CrmService.detectDelayProperty(messages) ?? "intervalSeconds";
+      return Object.keys(messages).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)).map((key) => {
+        const item = messages[key];
+        if (!item || typeof item !== "object") return { key, text: void 0, delay: void 0 };
+        return { key, text: item[textProp], delay: item[delayProp] };
+      });
+    }
+    /** True when both collections carry identical sequential keys, text order, canonical fields, and delay values. */
+    static messagesEquivalent(a, b) {
+      return JSON.stringify(_CrmService.canonicalSnapshot(a)) === JSON.stringify(_CrmService.canonicalSnapshot(b));
+    }
+    static deepCopyCollection(messages) {
+      return JSON.parse(JSON.stringify(messages));
+    }
+    /** Read the persisted profile back and confirm the target collection matches the expected rebuilt collection. */
+    static verifyReplacement(saved, target, expected) {
+      if (!saved || !_CrmService.validateProfile(saved)) return false;
+      const messages = _CrmService.getTargetMessages(saved, target);
+      if (messages === void 0) return false;
+      return _CrmService.messagesEquivalent(messages, expected);
+    }
+    /** Restore the original target collection after a failed verification. Returns true only when the restore is confirmed. */
+    static rollbackTargetCollection(key, target, original, previousCount) {
+      const data = _CrmService.readProfile(key);
+      if (!data || !_CrmService.validateProfile(data)) return false;
+      if (target === "icebreaker") {
+        data.messages = original;
+      } else {
+        const broadcast = data.broadcast;
+        if (!broadcast || typeof broadcast !== "object" || Array.isArray(broadcast)) return false;
+        broadcast.messages = original;
       }
       _CrmService.writeProfile(key, data);
-      const profileKey = key.replace("chat-sender-", "");
-      Promise.resolve().then(() => (init_dev(), dev_exports)).then(({ addImportHistory: addImportHistory2 }) => {
-        addImportHistory2({
+      const saved = _CrmService.readProfile(key);
+      const messages = saved ? _CrmService.getTargetMessages(saved, target) : void 0;
+      if (messages === void 0) return false;
+      return Object.keys(messages).length === previousCount;
+    }
+    /** Record an import history entry through the static dev import. Best-effort, never throws. */
+    static recordImportHistory(profileId, entry) {
+      try {
+        addImportHistory({
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          profileKey,
-          importedCount,
-          result: "success"
+          profileKey: profileId,
+          importedCount: entry.result === "success" ? entry.finalMessageCount ?? 0 : 0,
+          ...entry
         });
-      }).catch(() => {
-      });
-      const targetName = target === "icebreaker" ? "IceBreaker" : "Broadcast";
-      return { importedCount, message: `Imported ${importedCount} snippets to ${targetName}.` };
+      } catch {
+      }
     }
   };
 
-  // ../src/companion/companion-diagnostics-collectors.ts
-  init_storage_service();
-  init_storage_keys();
-
   // ../src/companion/storage-version.ts
-  init_storage_service();
-  init_storage_keys();
   var STORAGE_VERSION = 2;
   var VERSION_KEY = STORAGE_KEYS.STORAGE_VERSION;
   function getStoredVersion() {
@@ -4491,8 +4541,6 @@
   }
 
   // ../src/companion/companion-diagnostics.ts
-  init_storage_service();
-  init_dev();
   var moduleNames = [];
   function setRegisteredModules(names) {
     moduleNames = names;
@@ -4552,8 +4600,6 @@
   }
 
   // ../src/companion/companion-diagnostics-collectors.ts
-  init_dev();
-  init_platform_interface();
   var financeController = null;
   function setFinanceController(controller) {
     financeController = controller;
@@ -4995,7 +5041,12 @@
     }
     const result = {};
     imports.forEach((imp, i) => {
-      result[`Import ${i + 1}`] = `${imp.timestamp} | ${imp.profileKey} | ${imp.importedCount} items | ${imp.result}`;
+      if (imp.target === void 0) {
+        result[`Import ${i + 1}`] = `${imp.timestamp} | ${imp.profileKey} | ${imp.importedCount} items | ${imp.result}`;
+        return;
+      }
+      const targetLabel = imp.target === "icebreaker" ? "IceBreaker" : "Broadcast";
+      result[`Import ${i + 1}`] = `${imp.timestamp} | ${imp.profileKey} | ${targetLabel} | ${imp.importedCount} items | ${imp.result} | lines ${imp.linesEntered ?? "-"} | unique ${imp.uniqueSnippets ?? "-"} | prev ${imp.previousMessageCount ?? "-"} | final ${imp.finalMessageCount ?? "-"} | dups ${imp.duplicatesSkipped ?? "-"}`;
     });
     result["Total Imports"] = String(imports.length);
     return result;
@@ -5231,7 +5282,6 @@
   }
 
   // ../src/companion/finance-module.ts
-  init_dev();
   var FINANCE_MODULE_ID = "finance";
   var FinanceModule = class {
     constructor() {
@@ -5622,9 +5672,6 @@
     clearInterval(dashboardInterval);
     dashboardInterval = null;
   }
-
-  // ../src/companion/companion-modal.ts
-  init_dev();
 
   // ../src/companion/companion-styles.ts
   var modalStylesInjected = false;
@@ -6024,6 +6071,30 @@
     margin-bottom: 8px;
 }
 
+.ab-import-warning {
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: #fcd34d;
+    font-size: 12px;
+    line-height: 1.45;
+    margin-bottom: 8px;
+}
+
+.ab-import-error {
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(220, 38, 38, 0.12);
+    border: 1px solid rgba(220, 38, 38, 0.4);
+    color: #fca5a5;
+    font-size: 12px;
+    line-height: 1.45;
+    margin-bottom: 8px;
+}
+
+.ab-import-error[hidden] { display: none; }
+
 .ab-btn-import {
     padding: 12px 16px;
     font-size: 13px;
@@ -6075,13 +6146,48 @@
     color: #fecaca;
 }
 
-/* Textarea */
+/* Textarea with line-number gutter */
+.ab-import-editor {
+    display: flex;
+    border: 1px solid var(--ab-border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ab-import-editor:focus-within {
+    border-color: var(--ab-accent);
+    box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.15);
+}
+.ab-import-editor.ab-import-editor-error {
+    border-color: rgba(220, 38, 38, 0.7);
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
+}
+
+.ab-import-gutter {
+    width: 40px;
+    flex-shrink: 0;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.04);
+    border-right: 1px solid var(--ab-border);
+    text-align: right;
+}
+
+.ab-import-gutter-numbers {
+    padding: 14px 8px 14px 0;
+    color: var(--ab-text-dim);
+    font-family: var(--ab-font);
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre;
+    will-change: transform;
+    user-select: none;
+}
+
 .ab-import-textarea {
     width: 100%;
     min-height: 260px;
     padding: 14px;
-    border-radius: 10px;
-    border: 1px solid var(--ab-border);
+    border: none;
     background: var(--ab-bg-card);
     color: var(--ab-text);
     font-family: var(--ab-font);
@@ -6090,15 +6196,10 @@
     box-sizing: border-box;
     resize: none;
     outline: none;
-    transition: border-color 0.15s, box-shadow 0.15s;
 }
 .ab-import-textarea::placeholder {
     color: var(--ab-text-dim);
     opacity: 0.7;
-}
-.ab-import-textarea:focus {
-    border-color: var(--ab-accent);
-    box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.15);
 }
 
 /* Custom scrollbar for textarea */
@@ -6153,7 +6254,7 @@
       };
     });
   }
-  function showConfirm(msgHtml) {
+  function showConfirm(msgHtml, confirmLabel = "Yes", cancelLabel = "No") {
     return new Promise((resolve) => {
       const overlay = createDialogOverlay();
       overlay.innerHTML = `
@@ -6165,8 +6266,8 @@
                     ${msgHtml}
                 </div>
                 <div class="ab-content" style="padding-top: 0; display:flex; gap:10px;">
-                    <button class="ab-btn primary" id="ab-confirm-yes">Yes</button>
-                    <button class="ab-btn" id="ab-confirm-no">No</button>
+                    <button class="ab-btn primary" id="ab-confirm-yes">${confirmLabel}</button>
+                    <button class="ab-btn" id="ab-confirm-no">${cancelLabel}</button>
                 </div>
             </div>
         `;
@@ -6199,37 +6300,74 @@
                             Import to Broadcast
                         </button>
                     </div>
+                    <div class="ab-import-warning" id="ab-import-warning">
+                        Pasting snippets will replace the current message list of the selected target.
+                    </div>
                     <label style="display:block; margin-bottom:6px; font-size:12px; color:var(--ab-text-dim); font-weight:500;">
                         Paste snippets (one per line):
                     </label>
-                    <textarea class="ab-import-textarea" id="ab-import-textarea" 
-                        placeholder="Snippet 1
+                    <div class="ab-import-editor" id="ab-import-editor">
+                        <div class="ab-import-gutter" id="ab-import-gutter">
+                            <div class="ab-import-gutter-numbers" id="ab-import-gutter-numbers">1</div>
+                        </div>
+                        <textarea class="ab-import-textarea" id="ab-import-textarea" 
+                            placeholder="Snippet 1
 Snippet 2
 Snippet 3
 ..."></textarea>
+                    </div>
+                    <div class="ab-import-error" id="ab-import-error" hidden>
+                        Please paste at least one non-empty snippet before importing.
+                    </div>
                     <button class="ab-btn ab-btn-cancel" id="ab-import-cancel">Cancel</button>
                 </div>
             </div>
         `;
       const textarea = document.getElementById("ab-import-textarea");
+      const gutterNumbers = document.getElementById("ab-import-gutter-numbers");
+      const errorBox = document.getElementById("ab-import-error");
+      const editor = document.getElementById("ab-import-editor");
       textarea.focus();
+      const updateLineNumbers = () => {
+        const count = Math.max(1, textarea.value.split("\n").length);
+        gutterNumbers.textContent = Array.from({ length: count }, (_, i) => String(i + 1)).join("\n");
+        gutterNumbers.style.transform = "translateY(0px)";
+        if (errorBox.hidden === false) {
+          errorBox.hidden = true;
+          editor.classList.remove("ab-import-editor-error");
+        }
+      };
+      const syncGutterScroll = () => {
+        gutterNumbers.style.transform = `translateY(${-textarea.scrollTop}px)`;
+      };
+      const onInput = () => updateLineNumbers();
+      const onScroll = () => syncGutterScroll();
+      textarea.addEventListener("input", onInput);
+      textarea.addEventListener("scroll", onScroll);
       const parseSnippets = () => {
         return textarea.value.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
       };
+      const confirmImport = (target) => {
+        const snippets = parseSnippets();
+        if (snippets.length === 0) {
+          errorBox.hidden = false;
+          editor.classList.add("ab-import-editor-error");
+          textarea.focus();
+          return;
+        }
+        textarea.removeEventListener("input", onInput);
+        textarea.removeEventListener("scroll", onScroll);
+        closeDialogOverlay(overlay);
+        resolve({ snippets, target });
+      };
       document.getElementById("ab-import-cancel").onclick = () => {
+        textarea.removeEventListener("input", onInput);
+        textarea.removeEventListener("scroll", onScroll);
         closeDialogOverlay(overlay);
         resolve(null);
       };
-      document.getElementById("ab-import-icebreaker").onclick = () => {
-        const snippets = parseSnippets();
-        closeDialogOverlay(overlay);
-        resolve({ snippets, target: "icebreaker" });
-      };
-      document.getElementById("ab-import-broadcast").onclick = () => {
-        const snippets = parseSnippets();
-        closeDialogOverlay(overlay);
-        resolve({ snippets, target: "broadcast" });
-      };
+      document.getElementById("ab-import-icebreaker").onclick = () => confirmImport("icebreaker");
+      document.getElementById("ab-import-broadcast").onclick = () => confirmImport("broadcast");
     });
   }
   function showDelayModal(initialDelays) {
@@ -6386,13 +6524,14 @@ Snippet 3
       const result = await showImportSnippetsModal();
       if (!result) return;
       const { snippets, target } = result;
-      const importResult = CrmService.importSnippetsToProfile(target, snippets);
-      if (importResult.importedCount > 0) {
+      const importResult = await CrmService.importSnippetsToProfile(target, snippets, {
+        confirmReplace: async (message) => showConfirm(message, "Replace", "Cancel")
+      });
+      if (importResult.outcome === "success") {
         updateDashboard();
-        await showAlert(importResult.message);
-      } else {
-        await showAlert(importResult.message);
       }
+      const reportHtml = importResult.message.replace(/\n/g, "<br>");
+      await showAlert(reportHtml);
     });
     row2.appendChild(importBtn);
     container.appendChild(row2);
@@ -6555,7 +6694,6 @@ Snippet 3
   var CompanionModal = _CompanionModal;
 
   // ../src/companion/companion-app.ts
-  init_dev();
   var LAUNCHER_CSS = `
 /* --- Launcher group layout tokens --- */
 :root {
@@ -6733,16 +6871,7 @@ Snippet 3
   __publicField(_CompanionApp, "instance", null);
   var CompanionApp = _CompanionApp;
 
-  // ../src/companion/create-composition.ts
-  init_storage_service();
-
-  // ../src/companion/bootstrap-coordinator.ts
-  init_dev();
-
   // ../src/companion/storage-migration.ts
-  init_storage_service();
-  init_storage_keys();
-  init_dev();
   var FINANCE_SHIFT_TYPES = ["morning", "day", "night"];
   var DEFAULT_FINANCE_STATE = {
     x: 24,
@@ -6867,7 +6996,6 @@ Snippet 3
   }
 
   // ../src/companion/bootstrap-coordinator.ts
-  init_storage_service();
   var BootstrapCoordinator = class {
     constructor(runtime, globalState, diagnostics, manager, financeModule, modal, app) {
       this.runtime = runtime;

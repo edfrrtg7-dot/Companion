@@ -601,7 +601,13 @@ function collectImportHistory(): Record<string, string> {
     }
     const result: Record<string, string> = {};
     imports.forEach((imp, i) => {
-        result[`Import ${i + 1}`] = `${imp.timestamp} | ${imp.profileKey} | ${imp.importedCount} items | ${imp.result}`;
+        // Legacy entries (without RC-STABLE-003 optional fields) keep the original format.
+        if (imp.target === undefined) {
+            result[`Import ${i + 1}`] = `${imp.timestamp} | ${imp.profileKey} | ${imp.importedCount} items | ${imp.result}`;
+            return;
+        }
+        const targetLabel = imp.target === "icebreaker" ? "IceBreaker" : "Broadcast";
+        result[`Import ${i + 1}`] = `${imp.timestamp} | ${imp.profileKey} | ${targetLabel} | ${imp.importedCount} items | ${imp.result} | lines ${imp.linesEntered ?? "-"} | unique ${imp.uniqueSnippets ?? "-"} | prev ${imp.previousMessageCount ?? "-"} | final ${imp.finalMessageCount ?? "-"} | dups ${imp.duplicatesSkipped ?? "-"}`;
     });
     result["Total Imports"] = String(imports.length);
     return result;

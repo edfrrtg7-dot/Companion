@@ -145,8 +145,16 @@ export function clearErrorHistory(): void {
 export interface ImportHistoryEntry {
     readonly timestamp: string;
     readonly profileKey: string;
+    /** Legacy field: number of imported items. Retained for backward compatibility. */
     readonly importedCount: number;
-    readonly result: "success" | "partial" | "failed";
+    readonly result: "success" | "partial" | "failed" | "no-change";
+    /** Optional RC-STABLE-003 fields. Must remain optional for backward compatibility. */
+    readonly target?: "icebreaker" | "broadcast";
+    readonly linesEntered?: number;
+    readonly uniqueSnippets?: number;
+    readonly previousMessageCount?: number;
+    readonly finalMessageCount?: number;
+    readonly duplicatesSkipped?: number;
 }
 
 /** Maximum import history entries. */
