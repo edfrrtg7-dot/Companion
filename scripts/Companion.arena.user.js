@@ -4332,11 +4332,12 @@
         return base({ message: "No valid snippets entered. Existing messages were not changed." });
       }
       const key = _CrmService.findProfileKey();
+      const initial = key ? _CrmService.readProfile(key) : null;
+      _CrmService.logImportResolutionDiagnostic(target, key, initial, "initial");
       if (!key) {
         return base({ message: "No CRM profile found." });
       }
       const profileId = key.replace(CRM_STORAGE_PREFIX, "");
-      const initial = _CrmService.readProfile(key);
       if (!initial || !_CrmService.validateProfile(initial)) {
         return base({ message: "Invalid profile structure." });
       }
@@ -4366,6 +4367,7 @@ Replacing them will remove ${previousMessageCount} existing message(s) and rebui
       }
       const messages = _CrmService.getTargetMessages(data, target);
       if (messages === void 0) {
+        _CrmService.logImportResolutionDiagnostic(target, key, data, "post-confirmation");
         return base({ message: "Target collection not found in profile." });
       }
       const delayValue = target === "icebreaker" ? _CrmService.readDelays(data).priv : _CrmService.readDelays(data).broad;
@@ -4428,6 +4430,117 @@ Messages created: ${finalMessageCount}
 Duplicate lines skipped: ${duplicatesSkipped}
 Final message count: ${finalMessageCount}`
       });
+    }
+    /**
+     * TEMPORARY RC-STABLE-003-FIX-001 diagnostic.
+     *
+     * Emits an objective record of the target message-collection resolution
+     * process for the requested target: every candidate collection inspected,
+     * why each candidate was accepted or rejected, and the profile object
+     * shape around the message collections. Used to compare a failing profile
+     * against a working profile. Logging only — never changes behaviour.
+     * REMOVE after the structural difference has been identified.
+     */
+    static logImportResolutionDiagnostic(target, key, data, phase) {
+      try {
+        const payload = _CrmService.buildImportResolutionDiagnostic(target, key, data, phase);
+        console.log("[RC-STABLE-003-FIX-001] importTargetResolution", JSON.stringify(payload));
+      } catch {
+      }
+    }
+    static buildImportResolutionDiagnostic(target, key, data, phase) {
+      const candidates = [];
+      let resolvedPath = null;
+      const isMessageObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+      const containerType = (value) => value === void 0 ? "undefined" : value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
+      if (data && typeof data === "object" && !Array.isArray(data)) {
+        if (target === "icebreaker") {
+          const candidate = data.messages;
+          const accepted = isMessageObject(candidate);
+          candidates.push({
+            path: "data.messages",
+            inspected: true,
+            exists: candidate !== void 0 && candidate !== null,
+            containerType: containerType(candidate),
+            reason: accepted ? "accepted" : candidate === void 0 ? "missing" : candidate === null ? "null container" : Array.isArray(candidate) ? "array container (not a message object)" : `type "${typeof candidate}" (not a message object)`
+          });
+          if (accepted) resolvedPath = "data.messages";
+        } else {
+          const broadcast = data.broadcast;
+          const broadcastAccepted = isMessageObject(broadcast);
+          candidates.push({
+            path: "data.broadcast",
+            inspected: true,
+            exists: broadcast !== void 0 && broadcast !== null,
+            containerType: containerType(broadcast),
+            reason: broadcastAccepted ? "container present" : broadcast === void 0 ? "missing" : broadcast === null ? "null container" : Array.isArray(broadcast) ? "array container (not a message object)" : `type "${typeof broadcast}" (not a message object)`
+          });
+          if (broadcastAccepted) {
+            const messages = broadcast.messages;
+            const accepted = isMessageObject(messages);
+            candidates.push({
+              path: "data.broadcast.messages",
+              inspected: true,
+              exists: messages !== void 0 && messages !== null,
+              containerType: containerType(messages),
+              reason: accepted ? "accepted" : messages === void 0 ? "missing" : messages === null ? "null container" : Array.isArray(messages) ? "array container (not a message object)" : `type "${typeof messages}" (not a message object)`
+            });
+            if (accepted) resolvedPath = "data.broadcast.messages";
+          }
+        }
+      }
+      return {
+        target,
+        phase,
+        profileKey: key,
+        profileFound: key !== null,
+        profileRead: key !== null && data !== null,
+        profileValid: _CrmService.validateProfile(data ?? {}),
+        candidates,
+        resolved: resolvedPath !== null,
+        resolutionPath: resolvedPath,
+        profileShape: _CrmService.describeProfileShape(data)
+      };
+    }
+    static describeProfileShape(data) {
+      if (!data || typeof data !== "object" || Array.isArray(data)) {
+        return { present: false };
+      }
+      const describeCollection = (value) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          return { exists: false };
+        }
+        const keys = Object.keys(value);
+        const first = keys.length > 0 ? value[keys[0]] : void 0;
+        return {
+          exists: true,
+          type: "object",
+          keyCount: keys.length,
+          sampleKeys: keys.slice(0, 5),
+          firstItemShape: first && typeof first === "object" && !Array.isArray(first) ? Object.fromEntries(Object.entries(first).map(([k, v]) => [k, Array.isArray(v) ? "array" : typeof v])) : void 0
+        };
+      };
+      const topLevel = {};
+      for (const k of Object.keys(data)) {
+        const v = data[k];
+        topLevel[k] = v === null ? "null" : Array.isArray(v) ? "array" : typeof v;
+      }
+      const broadcast = data.broadcast;
+      const broadcastShape = broadcast && typeof broadcast === "object" && !Array.isArray(broadcast) ? {
+        exists: true,
+        type: "object",
+        keys: Object.keys(broadcast),
+        messages: describeCollection(broadcast.messages)
+      } : {
+        exists: false,
+        type: broadcast === void 0 ? "undefined" : broadcast === null ? "null" : Array.isArray(broadcast) ? "array" : typeof broadcast
+      };
+      return {
+        present: true,
+        topLevel,
+        messages: describeCollection(data.messages),
+        broadcast: broadcastShape
+      };
     }
     /** Resolve the target messages collection, or undefined when the target container is missing. */
     static getTargetMessages(data, target) {
