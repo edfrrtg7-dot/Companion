@@ -242,38 +242,34 @@ export class FinanceModule implements CompanionModule<FinanceSnapshot, FinanceDi
 
     /**
      * Restore the widget to its persisted visibility state with route-dependent behavior.
-     * Chat routes restore persisted state; non-chat routes force collapsed without auto-refresh.
+     * Chat routes restore the saved chat preference; non-chat routes force
+     * collapsed without touching the chat preference and without auto-refresh.
      */
     restoreVisibility(): void {
         if (!this.initialized || this.disposed) return;
         if (!this.controller) return;
 
-        if (!this.widget) {
-            this.widget = new FinanceWidget(this.controller);
-        }
-
-        // Apply route-dependent startup behavior (Part D)
         const runtime = getRuntimeEnvironment();
         const routeCategory = runtime.getRouteCategory();
 
-        if (routeCategory === "chat") {
-            // Chat route: restore persisted state (expanded/collapsed, position, dims, visibility)
-            if (isDevMode()) diag("[FinanceModule] chat route — restoring persisted state");
-            // Widget constructor already restores persisted geometry and collapsed state
-        } else if (routeCategory === "non-chat") {
-            // Non-chat route: force collapsed, preserve saved geometry and shift, no auto-refresh
-            if (isDevMode()) diag("[FinanceModule] non-chat route — forcing collapsed, preserving geometry");
-            if (this.widget) {
-                // Ensure widget is collapsed without triggering refresh
-                if (!this.widget.isCollapsed) {
-                    this.widget.collapse();
-                }
-                // Show the widget in collapsed state
-                this.widget.show();
+        if (!this.widget) {
+            this.widget = new FinanceWidget(this.controller, {
+                forceCollapsed: routeCategory === "non-chat",
+            });
+        }
+
+        if (routeCategory === "non-chat") {
+            // Non-chat route: force collapsed, preserve saved chat preference,
+            // geometry, shift, and visibility — no auto-refresh.
+            if (isDevMode()) diag("[FinanceModule] non-chat route — forcing collapsed, preserving chat preference");
+            if (!this.widget.isCollapsed) {
+                this.widget.collapse();
             }
+            this.widget.show();
         } else {
-            // Unknown route: default to restoring persisted state
-            if (isDevMode()) diag("[FinanceModule] unknown route — restoring persisted state");
+            // Chat/unknown route: constructor already applied the saved chat
+            // preference to the live presentation. Preserve persisted visibility.
+            if (isDevMode()) diag("[FinanceModule] chat route — restoring saved chat preference");
         }
 
         if (isDevMode()) diag("[FinanceModule] widget visibility restored");
@@ -380,20 +376,18 @@ export class FinanceModule implements CompanionModule<FinanceSnapshot, FinanceDi
         const newCategory = runtime.getRouteCategory();
 
         if (newCategory === "non-chat") {
-            // chat -> non-chat: collapse Finance
+            // chat -> non-chat: collapse visually without updating the saved
+            // chat preference and without triggering a refresh.
             if (!this.widget.isCollapsed) {
                 if (isDevMode()) diag("[FinanceModule] hashchange: chat -> non-chat, collapsing");
                 this.widget.collapse();
             }
         } else if (newCategory === "chat") {
-            // non-chat -> chat: restore last valid persisted collapsed/expanded preference
-            // The widget will restore its persisted state on next render if we re-create it,
-            // but since we keep the same widget instance, we need to expand if it was previously expanded
-            // Note: persisted state is already in the widget's internal state from storage
-            if (isDevMode()) diag("[FinanceModule] hashchange: non-chat -> chat, restoring preference");
-            // The widget's persisted state (collapsed/expanded) is already applied on creation.
-            // If the widget exists, we respect its current state or re-apply from storage if needed.
-            // For now, we don't force expand — user can click to expand.
+            // non-chat -> chat: restore the saved chat preference immediately.
+            // If the preference is expanded, exactly one refresh is triggered;
+            // if collapsed, no refresh occurs.
+            if (isDevMode()) diag("[FinanceModule] hashchange: non-chat -> chat, restoring chat preference");
+            this.widget.applyChatPreference();
         }
     };
 

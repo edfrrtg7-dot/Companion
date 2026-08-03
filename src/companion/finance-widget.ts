@@ -48,6 +48,12 @@ export interface FinanceWidgetConfig {
     readonly classPrefix?: string;
     /** Callback when widget is closed. */
     readonly onClose?: () => void;
+    /**
+     * Route-enforced presentation: when true (non-chat route) the widget starts
+     * collapsed regardless of the saved chat preference. The saved chat
+     * preference is preserved and restored via applyChatPreference().
+     */
+    readonly forceCollapsed?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +70,7 @@ const DEFAULT_STATE = {
     height: 380,
     collapsed: true,
     hidden: false,
+    chatCollapsed: true,
 };
 
 /** Highlight duration in milliseconds. */
@@ -111,6 +118,14 @@ export class FinanceWidget extends CompanionWindow {
             onClose: config.onClose,
         };
         super(windowConfig);
+
+        // Route presentation: a non-chat construction forces collapsed without
+        // touching the saved chat preference; a chat/unknown construction
+        // applies the saved chat preference to the live presentation.
+        this.win = {
+            ...this.win,
+            collapsed: config.forceCollapsed ? true : this.win.chatCollapsed,
+        };
 
         if (isDevMode()) {
             diag("[FinanceWidget] constructor start");
@@ -199,6 +214,24 @@ export class FinanceWidget extends CompanionWindow {
         if (wasCollapsed && !this.firstExpandDone) {
             this.firstExpandDone = true;
             if (isDevMode()) diag("[FinanceWidget] first expand, triggering refresh");
+            this.controller.refresh();
+        }
+    }
+
+    /**
+     * Apply the saved chat-route collapse preference to the live presentation.
+     * On an expanded restore (SPA non-chat -> chat), triggers exactly one data
+     * refresh. Route-forced collapse uses collapse()/expand() directly and
+     * therefore never updates the saved preference.
+     */
+    override applyChatPreference(): void {
+        const wasCollapsed = this.win.collapsed;
+        // Suppress the expand() override's first-expand auto-refresh — the
+        // refresh below is the single controlled refresh for this transition.
+        this.firstExpandDone = true;
+        super.applyChatPreference();
+        if (!this.win.collapsed && wasCollapsed) {
+            if (isDevMode()) diag("[FinanceWidget] chat preference applied expanded, triggering refresh");
             this.controller.refresh();
         }
     }

@@ -2243,6 +2243,9 @@
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (typeof parsed === "object" && parsed !== null && typeof parsed.x === "number" && typeof parsed.y === "number" && typeof parsed.width === "number" && parsed.width > 0 && typeof parsed.height === "number" && parsed.height > 0 && typeof parsed.collapsed === "boolean" && typeof parsed.hidden === "boolean") {
+        if (typeof parsed.chatCollapsed !== "boolean") {
+          parsed.chatCollapsed = parsed.collapsed;
+        }
         return parsed;
       }
     } catch {
@@ -2507,6 +2510,19 @@
     get isCollapsed() {
       return this.win.collapsed;
     }
+    /**
+     * Apply the saved chat-route collapse preference to the live presentation.
+     * Route-forced (non-chat) presentation changes call collapse()/expand()
+     * directly and therefore never update the saved preference.
+     */
+    applyChatPreference() {
+      if (this.destroyed || !this.root || !this.contentEl) return;
+      if (this.win.chatCollapsed) {
+        this.collapse();
+      } else {
+        this.expand();
+      }
+    }
     // -------------------------------------------------------------------------
     // Collapse / Expand — two independent layouts
     // -------------------------------------------------------------------------
@@ -2565,6 +2581,8 @@
       } else {
         this.collapse();
       }
+      this.win = { ...this.win, chatCollapsed: this.win.collapsed };
+      this.persistState();
     }
     // -------------------------------------------------------------------------
     // Position normalization — keep the header and its controls reachable
@@ -2725,7 +2743,8 @@
     width: 360,
     height: 380,
     collapsed: true,
-    hidden: false
+    hidden: false,
+    chatCollapsed: true
   };
   var HIGHLIGHT_DURATION_MS = 2e3;
   var FinanceWidget = class extends CompanionWindow {
@@ -2803,6 +2822,10 @@
         if (this.controller.isLoading) return;
         this.controller.refresh();
       });
+      this.win = {
+        ...this.win,
+        collapsed: config.forceCollapsed ? true : this.win.chatCollapsed
+      };
       if (isDevMode()) {
         diag("[FinanceWidget] constructor start");
       }
@@ -2876,6 +2899,21 @@
       if (wasCollapsed && !this.firstExpandDone) {
         this.firstExpandDone = true;
         if (isDevMode()) diag("[FinanceWidget] first expand, triggering refresh");
+        this.controller.refresh();
+      }
+    }
+    /**
+     * Apply the saved chat-route collapse preference to the live presentation.
+     * On an expanded restore (SPA non-chat -> chat), triggers exactly one data
+     * refresh. Route-forced collapse uses collapse()/expand() directly and
+     * therefore never updates the saved preference.
+     */
+    applyChatPreference() {
+      const wasCollapsed = this.win.collapsed;
+      this.firstExpandDone = true;
+      super.applyChatPreference();
+      if (!this.win.collapsed && wasCollapsed) {
+        if (isDevMode()) diag("[FinanceWidget] chat preference applied expanded, triggering refresh");
         this.controller.refresh();
       }
     }
@@ -5264,7 +5302,8 @@
             this.widget.collapse();
           }
         } else if (newCategory === "chat") {
-          if (isDevMode()) diag("[FinanceModule] hashchange: non-chat -> chat, restoring preference");
+          if (isDevMode()) diag("[FinanceModule] hashchange: non-chat -> chat, restoring chat preference");
+          this.widget.applyChatPreference();
         }
       });
     }
@@ -5394,28 +5433,27 @@
     }
     /**
      * Restore the widget to its persisted visibility state with route-dependent behavior.
-     * Chat routes restore persisted state; non-chat routes force collapsed without auto-refresh.
+     * Chat routes restore the saved chat preference; non-chat routes force
+     * collapsed without touching the chat preference and without auto-refresh.
      */
     restoreVisibility() {
       if (!this.initialized || this.disposed) return;
       if (!this.controller) return;
-      if (!this.widget) {
-        this.widget = new FinanceWidget(this.controller);
-      }
       const runtime = getRuntimeEnvironment();
       const routeCategory = runtime.getRouteCategory();
-      if (routeCategory === "chat") {
-        if (isDevMode()) diag("[FinanceModule] chat route \u2014 restoring persisted state");
-      } else if (routeCategory === "non-chat") {
-        if (isDevMode()) diag("[FinanceModule] non-chat route \u2014 forcing collapsed, preserving geometry");
-        if (this.widget) {
-          if (!this.widget.isCollapsed) {
-            this.widget.collapse();
-          }
-          this.widget.show();
+      if (!this.widget) {
+        this.widget = new FinanceWidget(this.controller, {
+          forceCollapsed: routeCategory === "non-chat"
+        });
+      }
+      if (routeCategory === "non-chat") {
+        if (isDevMode()) diag("[FinanceModule] non-chat route \u2014 forcing collapsed, preserving chat preference");
+        if (!this.widget.isCollapsed) {
+          this.widget.collapse();
         }
+        this.widget.show();
       } else {
-        if (isDevMode()) diag("[FinanceModule] unknown route \u2014 restoring persisted state");
+        if (isDevMode()) diag("[FinanceModule] chat route \u2014 restoring saved chat preference");
       }
       if (isDevMode()) diag("[FinanceModule] widget visibility restored");
     }

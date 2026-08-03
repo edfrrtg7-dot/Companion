@@ -22,6 +22,12 @@ export interface WindowState {
     readonly height: number;
     readonly collapsed: boolean;
     readonly hidden: boolean;
+    /**
+     * User's chat-route collapse preference — last state the operator chose
+     * while on a chat route. Distinct from `collapsed` (live presentation),
+     * which non-chat routes may override without erasing this preference.
+     */
+    readonly chatCollapsed: boolean;
 }
 
 /** Configuration for CompanionWindow. */
@@ -74,6 +80,11 @@ function loadState(storageKey: string): WindowState | null {
             typeof parsed.collapsed === "boolean" &&
             typeof parsed.hidden === "boolean"
         ) {
+            // Legacy states (pre chat-preference) lack `chatCollapsed`. Treat the
+            // existing presentation `collapsed` as the initial chat preference.
+            if (typeof (parsed as Partial<WindowState>).chatCollapsed !== "boolean") {
+                (parsed as Partial<WindowState>).chatCollapsed = (parsed as WindowState).collapsed;
+            }
             return parsed as WindowState;
         }
     } catch {
@@ -233,6 +244,20 @@ export abstract class CompanionWindow {
         return this.win.collapsed;
     }
 
+    /**
+     * Apply the saved chat-route collapse preference to the live presentation.
+     * Route-forced (non-chat) presentation changes call collapse()/expand()
+     * directly and therefore never update the saved preference.
+     */
+    applyChatPreference(): void {
+        if (this.destroyed || !this.root || !this.contentEl) return;
+        if (this.win.chatCollapsed) {
+            this.collapse();
+        } else {
+            this.expand();
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Collapse / Expand — two independent layouts
     // -------------------------------------------------------------------------
@@ -309,6 +334,11 @@ export abstract class CompanionWindow {
         } else {
             this.collapse();
         }
+        // A user-initiated collapse/expand action records the chat preference.
+        // (Programmatic/route-forced collapse uses collapse()/expand() directly
+        // and therefore does not update the saved chat preference.)
+        this.win = { ...this.win, chatCollapsed: this.win.collapsed };
+        this.persistState();
     }
 
     // -------------------------------------------------------------------------
