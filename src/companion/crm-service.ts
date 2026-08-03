@@ -48,6 +48,14 @@ export interface SnippetImportOptions {
     readonly confirmReplace?: (message: string) => Promise<boolean>;
 }
 
+/**
+ * Supported message collection shapes.
+ *
+ * Keyed object (RC-STABLE-003 canonical) or array (confirmed real GoldenBride
+ * profile container shape). No other container types or paths are supported.
+ */
+type MessageCollection = Record<string, unknown> | unknown[];
+
 // ---------------------------------------------------------------------------
 // Profile access
 // ---------------------------------------------------------------------------
@@ -267,7 +275,7 @@ export class CrmService {
         return status === "Running" || status === "Progress" || status === "Paused";
     }
 
-    private static applyPropertyUpdates(messages: Record<string, unknown> | undefined, delayValue: number): void {
+    private static applyPropertyUpdates(messages: MessageCollection | undefined, delayValue: number): void {
         if (!messages || typeof messages !== "object") return;
         const property = CrmService.detectDelayProperty(messages);
         if (!property) return;
@@ -298,7 +306,7 @@ export class CrmService {
      * Detect the text property name from existing messages.
      * Returns "text" by default if not found.
      */
-    private static detectTextProperty(messages: Record<string, unknown> | undefined): string {
+    private static detectTextProperty(messages: MessageCollection | undefined): string {
         if (!messages || typeof messages !== "object") return "text";
         const items = Object.values(messages);
         if (items.length === 0) return "text";
@@ -317,7 +325,7 @@ export class CrmService {
      * Detect the delay property name from existing messages.
      * Uses DELAY_PROPERTIES constant for known delay property names.
      */
-    private static detectDelayProperty(messages: Record<string, unknown> | undefined): string | null {
+    private static detectDelayProperty(messages: MessageCollection | undefined): string | null {
         if (!messages || typeof messages !== "object") return null;
         const items = Object.values(messages);
         if (items.length === 0) return null;
@@ -395,7 +403,6 @@ export class CrmService {
 
         const key = CrmService.findProfileKey();
         const initial = key ? CrmService.readProfile(key) : null;
-        CrmService.logImportResolutionDiagnostic(target, key, initial, "initial");
         if (!key) {
             return base({ message: "No CRM profile found." });
         }
@@ -409,7 +416,7 @@ export class CrmService {
         if (initialMessages === undefined) {
             return base({ message: "Target collection not found in profile." });
         }
-        const previousMessageCount = Object.keys(initialMessages).length;
+        const previousMessageCount = CrmService.collectionCount(initialMessages);
 
         if (previousMessageCount > 0 && options.confirmReplace) {
             const confirmed = await options.confirmReplace(
@@ -433,7 +440,6 @@ export class CrmService {
 
         const messages = CrmService.getTargetMessages(data, target);
         if (messages === undefined) {
-            CrmService.logImportResolutionDiagnostic(target, key, data, "post-confirmation");
             return base({ message: "Target collection not found in profile." });
         }
 
@@ -458,15 +464,17 @@ export class CrmService {
             });
         }
 
-        // Immutable deep copy of the original target collection for rollback.
+        // Immutable deep copy of the original target collection and its
+        // canonical snapshot for rollback, captured before any mutation.
         const originalCollection = CrmService.deepCopyCollection(messages);
+        const originalSnapshot = CrmService.canonicalSnapshot(messages);
 
         CrmService.replaceTargetMessages(data, target, rebuilt);
         CrmService.writeProfile(key, data);
 
         const verified = CrmService.verifyReplacement(CrmService.readProfile(key), target, rebuilt);
         if (!verified) {
-            const rollbackRestored = CrmService.rollbackTargetCollection(key, target, originalCollection, previousMessageCount);
+            const rollbackRestored = CrmService.rollbackTargetCollection(key, target, originalCollection, originalSnapshot);
             CrmService.recordImportHistory(profileId, {
                 result: "failed",
                 target,
@@ -482,7 +490,7 @@ export class CrmService {
             return base({ message });
         }
 
-        const finalMessageCount = Object.keys(rebuilt).length;
+        const finalMessageCount = CrmService.collectionCount(rebuilt);
         CrmService.recordImportHistory(profileId, {
             result: "success",
             target,
@@ -501,141 +509,30 @@ export class CrmService {
         });
     }
 
-    /**
-     * TEMPORARY RC-STABLE-003-FIX-001 diagnostic.
-     *
-     * Emits an objective record of the target message-collection resolution
-     * process for the requested target: every candidate collection inspected,
-     * why each candidate was accepted or rejected, and the profile object
-     * shape around the message collections. Used to compare a failing profile
-     * against a working profile. Logging only — never changes behaviour.
-     * REMOVE after the structural difference has been identified.
-     */
-    private static logImportResolutionDiagnostic(target: "icebreaker" | "broadcast", key: string | null, data: Record<string, unknown> | null, phase: "initial" | "post-confirmation"): void {
-        try {
-            const payload = CrmService.buildImportResolutionDiagnostic(target, key, data, phase);
-            console.log("[RC-STABLE-003-FIX-001] importTargetResolution", JSON.stringify(payload));
-        } catch { /* diagnostic must never break import */ }
-    }
-
-    private static buildImportResolutionDiagnostic(target: "icebreaker" | "broadcast", key: string | null, data: Record<string, unknown> | null, phase: "initial" | "post-confirmation"): unknown {
-        const candidates: unknown[] = [];
-        let resolvedPath: string | null = null;
-
-        const isMessageObject = (value: unknown): boolean => !!value && typeof value === "object" && !Array.isArray(value);
-        const containerType = (value: unknown): string =>
-            value === undefined ? "undefined" : value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
-
-        if (data && typeof data === "object" && !Array.isArray(data)) {
-            if (target === "icebreaker") {
-                const candidate = (data as any).messages;
-                const accepted = isMessageObject(candidate);
-                candidates.push({
-                    path: "data.messages",
-                    inspected: true,
-                    exists: candidate !== undefined && candidate !== null,
-                    containerType: containerType(candidate),
-                    reason: accepted ? "accepted" : candidate === undefined ? "missing" : candidate === null ? "null container" : Array.isArray(candidate) ? "array container (not a message object)" : `type "${typeof candidate}" (not a message object)`,
-                });
-                if (accepted) resolvedPath = "data.messages";
-            } else {
-                const broadcast = (data as any).broadcast;
-                const broadcastAccepted = isMessageObject(broadcast);
-                candidates.push({
-                    path: "data.broadcast",
-                    inspected: true,
-                    exists: broadcast !== undefined && broadcast !== null,
-                    containerType: containerType(broadcast),
-                    reason: broadcastAccepted ? "container present" : broadcast === undefined ? "missing" : broadcast === null ? "null container" : Array.isArray(broadcast) ? "array container (not a message object)" : `type "${typeof broadcast}" (not a message object)`,
-                });
-                if (broadcastAccepted) {
-                    const messages = (broadcast as any).messages;
-                    const accepted = isMessageObject(messages);
-                    candidates.push({
-                        path: "data.broadcast.messages",
-                        inspected: true,
-                        exists: messages !== undefined && messages !== null,
-                        containerType: containerType(messages),
-                        reason: accepted ? "accepted" : messages === undefined ? "missing" : messages === null ? "null container" : Array.isArray(messages) ? "array container (not a message object)" : `type "${typeof messages}" (not a message object)`,
-                    });
-                    if (accepted) resolvedPath = "data.broadcast.messages";
-                }
-            }
-        }
-
-        return {
-            target,
-            phase,
-            profileKey: key,
-            profileFound: key !== null,
-            profileRead: key !== null && data !== null,
-            profileValid: CrmService.validateProfile(data ?? {}),
-            candidates,
-            resolved: resolvedPath !== null,
-            resolutionPath: resolvedPath,
-            profileShape: CrmService.describeProfileShape(data),
-        };
-    }
-
-    private static describeProfileShape(data: Record<string, unknown> | null): unknown {
-        if (!data || typeof data !== "object" || Array.isArray(data)) {
-            return { present: false };
-        }
-        const describeCollection = (value: unknown): unknown => {
-            if (!value || typeof value !== "object" || Array.isArray(value)) {
-                return { exists: false };
-            }
-            const keys = Object.keys(value);
-            const first = keys.length > 0 ? (value as Record<string, unknown>)[keys[0]] : undefined;
-            return {
-                exists: true,
-                type: "object",
-                keyCount: keys.length,
-                sampleKeys: keys.slice(0, 5),
-                firstItemShape: first && typeof first === "object" && !Array.isArray(first)
-                    ? Object.fromEntries(Object.entries(first).map(([k, v]) => [k, Array.isArray(v) ? "array" : typeof v]))
-                    : undefined,
-            };
-        };
-        const topLevel: Record<string, string> = {};
-        for (const k of Object.keys(data)) {
-            const v = (data as any)[k];
-            topLevel[k] = v === null ? "null" : Array.isArray(v) ? "array" : typeof v;
-        }
-        const broadcast = (data as any).broadcast;
-        const broadcastShape = broadcast && typeof broadcast === "object" && !Array.isArray(broadcast)
-            ? {
-                exists: true,
-                type: "object",
-                keys: Object.keys(broadcast),
-                messages: describeCollection((broadcast as any).messages),
-            }
-            : {
-                exists: false,
-                type: broadcast === undefined ? "undefined" : broadcast === null ? "null" : Array.isArray(broadcast) ? "array" : typeof broadcast,
-            };
-        return {
-            present: true,
-            topLevel,
-            messages: describeCollection((data as any).messages),
-            broadcast: broadcastShape,
-        };
-    }
-
     /** Resolve the target messages collection, or undefined when the target container is missing. */
-    private static getTargetMessages(data: Record<string, unknown>, target: "icebreaker" | "broadcast"): Record<string, unknown> | undefined {
+    private static getTargetMessages(data: Record<string, unknown>, target: "icebreaker" | "broadcast"): MessageCollection | undefined {
         if (target === "icebreaker") {
             const messages = (data as any).messages;
-            return messages && typeof messages === "object" && !Array.isArray(messages) ? (messages as Record<string, unknown>) : undefined;
+            return CrmService.isMessageCollection(messages) ? messages : undefined;
         }
         const broadcast = (data as any).broadcast;
         if (!broadcast || typeof broadcast !== "object" || Array.isArray(broadcast)) return undefined;
         const messages = (broadcast as any).messages;
-        return messages && typeof messages === "object" && !Array.isArray(messages) ? (messages as Record<string, unknown>) : undefined;
+        return CrmService.isMessageCollection(messages) ? messages : undefined;
+    }
+
+    /** True for supported message collection containers: a non-null object or an array. */
+    private static isMessageCollection(value: unknown): value is MessageCollection {
+        return !!value && typeof value === "object";
+    }
+
+    /** Count the entries in a message collection: array length or object key count. */
+    private static collectionCount(messages: MessageCollection): number {
+        return Array.isArray(messages) ? messages.length : Object.keys(messages).length;
     }
 
     /** Replace the target messages collection with the rebuilt collection. */
-    private static replaceTargetMessages(data: Record<string, unknown>, target: "icebreaker" | "broadcast", rebuilt: Record<string, unknown>): void {
+    private static replaceTargetMessages(data: Record<string, unknown>, target: "icebreaker" | "broadcast", rebuilt: MessageCollection): void {
         if (target === "icebreaker") {
             (data as any).messages = rebuilt;
         } else {
@@ -644,69 +541,92 @@ export class CrmService {
     }
 
     /**
-     * Build the replacement collection: sequential keys "1".."N", canonical
-     * { text, intervalSeconds } schema, first message delay 0, later messages
-     * use the detected target delay value. No runtime/progress fields copied.
+     * Build the replacement collection preserving the source shape: a keyed
+     * object for object sources (sequential keys "1".."N") and a dense array
+     * for array sources (index 0 = Message 1). Canonical { text, intervalSeconds }
+     * schema, first message delay 0, later messages use the detected target
+     * delay value. No runtime/progress fields copied.
      */
-    private static buildReplacementMessages(messages: Record<string, unknown>, snippets: string[], delayValue: number): Record<string, unknown> {
+    private static buildReplacementMessages(messages: MessageCollection, snippets: string[], delayValue: number): MessageCollection {
         const textProp = CrmService.detectTextProperty(messages);
         const delayProp = CrmService.detectDelayProperty(messages) ?? "intervalSeconds";
+        const item = (snippet: string, index: number): Record<string, unknown> => ({
+            [textProp]: snippet,
+            [delayProp]: index === 0 ? 0 : delayValue,
+        });
+        if (Array.isArray(messages)) {
+            return snippets.map((snippet, index) => item(snippet, index));
+        }
         const rebuilt: Record<string, unknown> = {};
         snippets.forEach((snippet, index) => {
-            rebuilt[String(index + 1)] = {
-                [textProp]: snippet,
-                [delayProp]: index === 0 ? 0 : delayValue,
-            } as Record<string, unknown>;
+            rebuilt[String(index + 1)] = item(snippet, index);
         });
         return rebuilt;
     }
 
-    /** Canonical snapshot used for equivalence and verification: ordered by numeric key, text and delay only. */
-    private static canonicalSnapshot(messages: Record<string, unknown>): unknown[] {
+    /**
+     * Canonical snapshot for equivalence and verification: the collection shape
+     * discriminator, the canonical property names, and the ordered text/delay
+     * values. Compares only shape/order/text/delay/canonical property names —
+     * never identity, insertion order, or runtime fields.
+     */
+    private static canonicalSnapshot(messages: MessageCollection): { shape: "array" | "object"; textProperty: string; delayProperty: string; items: Array<{ text: unknown; delay: unknown }> } {
         const textProp = CrmService.detectTextProperty(messages);
         const delayProp = CrmService.detectDelayProperty(messages) ?? "intervalSeconds";
-        return Object.keys(messages)
-            .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
-            .map((key) => {
-                const item = messages[key];
-                if (!item || typeof item !== "object") return { key, text: undefined, delay: undefined };
-                return { key, text: (item as any)[textProp], delay: (item as any)[delayProp] };
-            });
+        const entries = Array.isArray(messages)
+            ? messages
+            : Object.keys(messages)
+                .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
+                .map((key) => (messages as Record<string, unknown>)[key]);
+        return {
+            shape: Array.isArray(messages) ? "array" : "object",
+            textProperty: textProp,
+            delayProperty: delayProp,
+            items: entries.map((item) => {
+                if (!item || typeof item !== "object") return { text: undefined, delay: undefined };
+                return { text: (item as any)[textProp], delay: (item as any)[delayProp] };
+            }),
+        };
     }
 
-    /** True when both collections carry identical sequential keys, text order, canonical fields, and delay values. */
-    private static messagesEquivalent(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+    /** True when both collections carry the same shape, canonical property names, ordered text, and delay values. */
+    private static messagesEquivalent(a: MessageCollection, b: MessageCollection): boolean {
         return JSON.stringify(CrmService.canonicalSnapshot(a)) === JSON.stringify(CrmService.canonicalSnapshot(b));
     }
 
-    private static deepCopyCollection(messages: Record<string, unknown>): Record<string, unknown> {
-        return JSON.parse(JSON.stringify(messages)) as Record<string, unknown>;
+    /** Immutable deep copy for rollback. JSON round-trip: plain data only, functions and symbols are dropped. */
+    private static deepCopyCollection(messages: MessageCollection): MessageCollection {
+        return JSON.parse(JSON.stringify(messages)) as MessageCollection;
     }
 
     /** Read the persisted profile back and confirm the target collection matches the expected rebuilt collection. */
-    private static verifyReplacement(saved: Record<string, unknown> | null, target: "icebreaker" | "broadcast", expected: Record<string, unknown>): boolean {
+    private static verifyReplacement(saved: Record<string, unknown> | null, target: "icebreaker" | "broadcast", expected: MessageCollection): boolean {
         if (!saved || !CrmService.validateProfile(saved)) return false;
         const messages = CrmService.getTargetMessages(saved, target);
         if (messages === undefined) return false;
         return CrmService.messagesEquivalent(messages, expected);
     }
 
-    /** Restore the original target collection after a failed verification. Returns true only when the restore is confirmed. */
-    private static rollbackTargetCollection(key: string, target: "icebreaker" | "broadcast", original: Record<string, unknown>, previousCount: number): boolean {
+    /**
+     * Restore the original target collection after a failed verification.
+     * Returns true only when the restore is confirmed: the target resolves, the
+     * shape matches the original, and the canonical snapshot equals the original.
+     */
+    private static rollbackTargetCollection(key: string, target: "icebreaker" | "broadcast", originalCollection: MessageCollection, originalSnapshot: unknown): boolean {
         const data = CrmService.readProfile(key);
         if (!data || !CrmService.validateProfile(data)) return false;
         if (target === "icebreaker") {
-            (data as any).messages = original;
+            (data as any).messages = originalCollection;
         } else {
             const broadcast = (data as any).broadcast;
             if (!broadcast || typeof broadcast !== "object" || Array.isArray(broadcast)) return false;
-            (broadcast as any).messages = original;
+            (broadcast as any).messages = originalCollection;
         }
         CrmService.writeProfile(key, data);
         const saved = CrmService.readProfile(key);
         const messages = saved ? CrmService.getTargetMessages(saved, target) : undefined;
         if (messages === undefined) return false;
-        return Object.keys(messages).length === previousCount;
+        return JSON.stringify(CrmService.canonicalSnapshot(messages)) === JSON.stringify(originalSnapshot);
     }
 
     /** Record an import history entry through the static dev import. Best-effort, never throws. */

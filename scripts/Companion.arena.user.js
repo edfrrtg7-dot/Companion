@@ -4333,7 +4333,6 @@
       }
       const key = _CrmService.findProfileKey();
       const initial = key ? _CrmService.readProfile(key) : null;
-      _CrmService.logImportResolutionDiagnostic(target, key, initial, "initial");
       if (!key) {
         return base({ message: "No CRM profile found." });
       }
@@ -4345,7 +4344,7 @@
       if (initialMessages === void 0) {
         return base({ message: "Target collection not found in profile." });
       }
-      const previousMessageCount = Object.keys(initialMessages).length;
+      const previousMessageCount = _CrmService.collectionCount(initialMessages);
       if (previousMessageCount > 0 && options.confirmReplace) {
         const confirmed = await options.confirmReplace(
           `${targetName} currently has ${previousMessageCount} message(s).
@@ -4367,7 +4366,6 @@ Replacing them will remove ${previousMessageCount} existing message(s) and rebui
       }
       const messages = _CrmService.getTargetMessages(data, target);
       if (messages === void 0) {
-        _CrmService.logImportResolutionDiagnostic(target, key, data, "post-confirmation");
         return base({ message: "Target collection not found in profile." });
       }
       const delayValue = target === "icebreaker" ? _CrmService.readDelays(data).priv : _CrmService.readDelays(data).broad;
@@ -4390,11 +4388,12 @@ Replacing them will remove ${previousMessageCount} existing message(s) and rebui
         });
       }
       const originalCollection = _CrmService.deepCopyCollection(messages);
+      const originalSnapshot = _CrmService.canonicalSnapshot(messages);
       _CrmService.replaceTargetMessages(data, target, rebuilt);
       _CrmService.writeProfile(key, data);
       const verified = _CrmService.verifyReplacement(_CrmService.readProfile(key), target, rebuilt);
       if (!verified) {
-        const rollbackRestored = _CrmService.rollbackTargetCollection(key, target, originalCollection, previousMessageCount);
+        const rollbackRestored = _CrmService.rollbackTargetCollection(key, target, originalCollection, originalSnapshot);
         _CrmService.recordImportHistory(profileId, {
           result: "failed",
           target,
@@ -4407,7 +4406,7 @@ Replacing them will remove ${previousMessageCount} existing message(s) and rebui
         const message = rollbackRestored ? "Storage write verification failed. The original messages were restored." : "Storage write verification failed AND the original messages could not be restored. Manual recovery is required.";
         return base({ message });
       }
-      const finalMessageCount = Object.keys(rebuilt).length;
+      const finalMessageCount = _CrmService.collectionCount(rebuilt);
       _CrmService.recordImportHistory(profileId, {
         result: "success",
         target,
@@ -4431,127 +4430,24 @@ Duplicate lines skipped: ${duplicatesSkipped}
 Final message count: ${finalMessageCount}`
       });
     }
-    /**
-     * TEMPORARY RC-STABLE-003-FIX-001 diagnostic.
-     *
-     * Emits an objective record of the target message-collection resolution
-     * process for the requested target: every candidate collection inspected,
-     * why each candidate was accepted or rejected, and the profile object
-     * shape around the message collections. Used to compare a failing profile
-     * against a working profile. Logging only — never changes behaviour.
-     * REMOVE after the structural difference has been identified.
-     */
-    static logImportResolutionDiagnostic(target, key, data, phase) {
-      try {
-        const payload = _CrmService.buildImportResolutionDiagnostic(target, key, data, phase);
-        console.log("[RC-STABLE-003-FIX-001] importTargetResolution", JSON.stringify(payload));
-      } catch {
-      }
-    }
-    static buildImportResolutionDiagnostic(target, key, data, phase) {
-      const candidates = [];
-      let resolvedPath = null;
-      const isMessageObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-      const containerType = (value) => value === void 0 ? "undefined" : value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
-      if (data && typeof data === "object" && !Array.isArray(data)) {
-        if (target === "icebreaker") {
-          const candidate = data.messages;
-          const accepted = isMessageObject(candidate);
-          candidates.push({
-            path: "data.messages",
-            inspected: true,
-            exists: candidate !== void 0 && candidate !== null,
-            containerType: containerType(candidate),
-            reason: accepted ? "accepted" : candidate === void 0 ? "missing" : candidate === null ? "null container" : Array.isArray(candidate) ? "array container (not a message object)" : `type "${typeof candidate}" (not a message object)`
-          });
-          if (accepted) resolvedPath = "data.messages";
-        } else {
-          const broadcast = data.broadcast;
-          const broadcastAccepted = isMessageObject(broadcast);
-          candidates.push({
-            path: "data.broadcast",
-            inspected: true,
-            exists: broadcast !== void 0 && broadcast !== null,
-            containerType: containerType(broadcast),
-            reason: broadcastAccepted ? "container present" : broadcast === void 0 ? "missing" : broadcast === null ? "null container" : Array.isArray(broadcast) ? "array container (not a message object)" : `type "${typeof broadcast}" (not a message object)`
-          });
-          if (broadcastAccepted) {
-            const messages = broadcast.messages;
-            const accepted = isMessageObject(messages);
-            candidates.push({
-              path: "data.broadcast.messages",
-              inspected: true,
-              exists: messages !== void 0 && messages !== null,
-              containerType: containerType(messages),
-              reason: accepted ? "accepted" : messages === void 0 ? "missing" : messages === null ? "null container" : Array.isArray(messages) ? "array container (not a message object)" : `type "${typeof messages}" (not a message object)`
-            });
-            if (accepted) resolvedPath = "data.broadcast.messages";
-          }
-        }
-      }
-      return {
-        target,
-        phase,
-        profileKey: key,
-        profileFound: key !== null,
-        profileRead: key !== null && data !== null,
-        profileValid: _CrmService.validateProfile(data ?? {}),
-        candidates,
-        resolved: resolvedPath !== null,
-        resolutionPath: resolvedPath,
-        profileShape: _CrmService.describeProfileShape(data)
-      };
-    }
-    static describeProfileShape(data) {
-      if (!data || typeof data !== "object" || Array.isArray(data)) {
-        return { present: false };
-      }
-      const describeCollection = (value) => {
-        if (!value || typeof value !== "object" || Array.isArray(value)) {
-          return { exists: false };
-        }
-        const keys = Object.keys(value);
-        const first = keys.length > 0 ? value[keys[0]] : void 0;
-        return {
-          exists: true,
-          type: "object",
-          keyCount: keys.length,
-          sampleKeys: keys.slice(0, 5),
-          firstItemShape: first && typeof first === "object" && !Array.isArray(first) ? Object.fromEntries(Object.entries(first).map(([k, v]) => [k, Array.isArray(v) ? "array" : typeof v])) : void 0
-        };
-      };
-      const topLevel = {};
-      for (const k of Object.keys(data)) {
-        const v = data[k];
-        topLevel[k] = v === null ? "null" : Array.isArray(v) ? "array" : typeof v;
-      }
-      const broadcast = data.broadcast;
-      const broadcastShape = broadcast && typeof broadcast === "object" && !Array.isArray(broadcast) ? {
-        exists: true,
-        type: "object",
-        keys: Object.keys(broadcast),
-        messages: describeCollection(broadcast.messages)
-      } : {
-        exists: false,
-        type: broadcast === void 0 ? "undefined" : broadcast === null ? "null" : Array.isArray(broadcast) ? "array" : typeof broadcast
-      };
-      return {
-        present: true,
-        topLevel,
-        messages: describeCollection(data.messages),
-        broadcast: broadcastShape
-      };
-    }
     /** Resolve the target messages collection, or undefined when the target container is missing. */
     static getTargetMessages(data, target) {
       if (target === "icebreaker") {
         const messages2 = data.messages;
-        return messages2 && typeof messages2 === "object" && !Array.isArray(messages2) ? messages2 : void 0;
+        return _CrmService.isMessageCollection(messages2) ? messages2 : void 0;
       }
       const broadcast = data.broadcast;
       if (!broadcast || typeof broadcast !== "object" || Array.isArray(broadcast)) return void 0;
       const messages = broadcast.messages;
-      return messages && typeof messages === "object" && !Array.isArray(messages) ? messages : void 0;
+      return _CrmService.isMessageCollection(messages) ? messages : void 0;
+    }
+    /** True for supported message collection containers: a non-null object or an array. */
+    static isMessageCollection(value) {
+      return !!value && typeof value === "object";
+    }
+    /** Count the entries in a message collection: array length or object key count. */
+    static collectionCount(messages) {
+      return Array.isArray(messages) ? messages.length : Object.keys(messages).length;
     }
     /** Replace the target messages collection with the rebuilt collection. */
     static replaceTargetMessages(data, target, rebuilt) {
@@ -4562,36 +4458,53 @@ Final message count: ${finalMessageCount}`
       }
     }
     /**
-     * Build the replacement collection: sequential keys "1".."N", canonical
-     * { text, intervalSeconds } schema, first message delay 0, later messages
-     * use the detected target delay value. No runtime/progress fields copied.
+     * Build the replacement collection preserving the source shape: a keyed
+     * object for object sources (sequential keys "1".."N") and a dense array
+     * for array sources (index 0 = Message 1). Canonical { text, intervalSeconds }
+     * schema, first message delay 0, later messages use the detected target
+     * delay value. No runtime/progress fields copied.
      */
     static buildReplacementMessages(messages, snippets, delayValue) {
       const textProp = _CrmService.detectTextProperty(messages);
       const delayProp = _CrmService.detectDelayProperty(messages) ?? "intervalSeconds";
+      const item = (snippet, index) => ({
+        [textProp]: snippet,
+        [delayProp]: index === 0 ? 0 : delayValue
+      });
+      if (Array.isArray(messages)) {
+        return snippets.map((snippet, index) => item(snippet, index));
+      }
       const rebuilt = {};
       snippets.forEach((snippet, index) => {
-        rebuilt[String(index + 1)] = {
-          [textProp]: snippet,
-          [delayProp]: index === 0 ? 0 : delayValue
-        };
+        rebuilt[String(index + 1)] = item(snippet, index);
       });
       return rebuilt;
     }
-    /** Canonical snapshot used for equivalence and verification: ordered by numeric key, text and delay only. */
+    /**
+     * Canonical snapshot for equivalence and verification: the collection shape
+     * discriminator, the canonical property names, and the ordered text/delay
+     * values. Compares only shape/order/text/delay/canonical property names —
+     * never identity, insertion order, or runtime fields.
+     */
     static canonicalSnapshot(messages) {
       const textProp = _CrmService.detectTextProperty(messages);
       const delayProp = _CrmService.detectDelayProperty(messages) ?? "intervalSeconds";
-      return Object.keys(messages).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)).map((key) => {
-        const item = messages[key];
-        if (!item || typeof item !== "object") return { key, text: void 0, delay: void 0 };
-        return { key, text: item[textProp], delay: item[delayProp] };
-      });
+      const entries = Array.isArray(messages) ? messages : Object.keys(messages).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)).map((key) => messages[key]);
+      return {
+        shape: Array.isArray(messages) ? "array" : "object",
+        textProperty: textProp,
+        delayProperty: delayProp,
+        items: entries.map((item) => {
+          if (!item || typeof item !== "object") return { text: void 0, delay: void 0 };
+          return { text: item[textProp], delay: item[delayProp] };
+        })
+      };
     }
-    /** True when both collections carry identical sequential keys, text order, canonical fields, and delay values. */
+    /** True when both collections carry the same shape, canonical property names, ordered text, and delay values. */
     static messagesEquivalent(a, b) {
       return JSON.stringify(_CrmService.canonicalSnapshot(a)) === JSON.stringify(_CrmService.canonicalSnapshot(b));
     }
+    /** Immutable deep copy for rollback. JSON round-trip: plain data only, functions and symbols are dropped. */
     static deepCopyCollection(messages) {
       return JSON.parse(JSON.stringify(messages));
     }
@@ -4602,22 +4515,26 @@ Final message count: ${finalMessageCount}`
       if (messages === void 0) return false;
       return _CrmService.messagesEquivalent(messages, expected);
     }
-    /** Restore the original target collection after a failed verification. Returns true only when the restore is confirmed. */
-    static rollbackTargetCollection(key, target, original, previousCount) {
+    /**
+     * Restore the original target collection after a failed verification.
+     * Returns true only when the restore is confirmed: the target resolves, the
+     * shape matches the original, and the canonical snapshot equals the original.
+     */
+    static rollbackTargetCollection(key, target, originalCollection, originalSnapshot) {
       const data = _CrmService.readProfile(key);
       if (!data || !_CrmService.validateProfile(data)) return false;
       if (target === "icebreaker") {
-        data.messages = original;
+        data.messages = originalCollection;
       } else {
         const broadcast = data.broadcast;
         if (!broadcast || typeof broadcast !== "object" || Array.isArray(broadcast)) return false;
-        broadcast.messages = original;
+        broadcast.messages = originalCollection;
       }
       _CrmService.writeProfile(key, data);
       const saved = _CrmService.readProfile(key);
       const messages = saved ? _CrmService.getTargetMessages(saved, target) : void 0;
       if (messages === void 0) return false;
-      return Object.keys(messages).length === previousCount;
+      return JSON.stringify(_CrmService.canonicalSnapshot(messages)) === JSON.stringify(originalSnapshot);
     }
     /** Record an import history entry through the static dev import. Best-effort, never throws. */
     static recordImportHistory(profileId, entry) {
