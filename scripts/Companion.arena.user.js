@@ -4582,35 +4582,42 @@ Final message count: ${finalMessageCount}`
   // ../src/companion/profile-resolver.ts
   var CRM_STORAGE_PREFIX2 = "chat-sender-";
   var PROFILE_KEY_RE = /^chat-sender-\d+$/;
-  var MAX_TEXT_NODES = 2e3;
-  function parseVisibleProfileId(text) {
-    if (typeof text !== "string") return null;
-    const m = /(?:^|\n)\s*ID\s*:\s*(\d{1,20})\s*(?=\n|$)/.exec(text);
-    if (!m) return null;
-    const id = m[1];
-    if (!/^\d+$/.test(id)) return null;
-    return id;
+  var PROFILE_ID_SOURCE = "\\d{1,20}";
+  var PROFILE_ID_RE = new RegExp(`^${PROFILE_ID_SOURCE}$`);
+  var SIDEBAR_CONTAINER_SELECTOR = ".account-wrap-new";
+  var SIDEBAR_ID_SELECTOR = ".total-new a span";
+  var HASH_LADY_PARAM = "favoriteForLadyId";
+  function extractProfileIdFromHash(href) {
+    if (typeof href !== "string" || href.length === 0) return null;
+    const hashIndex = href.indexOf("#");
+    if (hashIndex < 0) return null;
+    const fragment = href.slice(hashIndex + 1);
+    const m = new RegExp(`(?:^|[;&])${HASH_LADY_PARAM}=(${PROFILE_ID_SOURCE})(?:[;&]|$)`).exec(fragment);
+    return m ? m[1] : null;
   }
   function extractProfileIdFromUrl(href) {
     if (typeof href !== "string" || href.length === 0) return null;
     const m = /[?&](?:id|profile|lady)[=/](\d{1,20})(?:&|$)/i.exec(href);
     return m ? m[1] : null;
   }
-  function extractVisibleProfileId(doc) {
+  function extractScopedSidebarProfileId(doc) {
     if (!doc || !doc.body) return null;
     try {
       if (typeof window !== "undefined" && window.top && window !== window.top) return null;
     } catch {
     }
+    let containers;
+    try {
+      containers = doc.querySelectorAll(SIDEBAR_CONTAINER_SELECTOR);
+    } catch {
+      return null;
+    }
+    if (containers.length !== 1) return null;
     const ids = /* @__PURE__ */ new Set();
-    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
-    let node = walker.nextNode();
-    let scanned = 0;
-    while (node && scanned < MAX_TEXT_NODES) {
-      const id = parseVisibleProfileId(node.textContent ?? "");
-      if (id) ids.add(id);
-      node = walker.nextNode();
-      scanned++;
+    const spans = containers[0].querySelectorAll(SIDEBAR_ID_SELECTOR);
+    for (const span of spans) {
+      const value = (span.textContent ?? "").trim();
+      if (PROFILE_ID_RE.test(value)) ids.add(value);
     }
     return ids.size === 1 ? [...ids][0] : null;
   }
@@ -4622,15 +4629,28 @@ Final message count: ${finalMessageCount}`
     return [];
   }
   function resolveActiveProfile() {
-    const visibleId = extractVisibleProfileId(typeof document !== "undefined" ? document : null);
-    if (visibleId) {
+    const sidebarId = extractScopedSidebarProfileId(typeof document !== "undefined" ? document : null);
+    if (sidebarId) {
       return {
         ok: true,
-        profileId: visibleId,
-        storageKey: `${CRM_STORAGE_PREFIX2}${visibleId}`,
+        profileId: sidebarId,
+        storageKey: `${CRM_STORAGE_PREFIX2}${sidebarId}`,
         source: "sidebar-dom",
         confidence: "HIGH"
       };
+    }
+    try {
+      const hashId = extractProfileIdFromHash(window.location.href);
+      if (hashId) {
+        return {
+          ok: true,
+          profileId: hashId,
+          storageKey: `${CRM_STORAGE_PREFIX2}${hashId}`,
+          source: "url",
+          confidence: "MEDIUM"
+        };
+      }
+    } catch {
     }
     try {
       const urlId = extractProfileIdFromUrl(window.location.href);
