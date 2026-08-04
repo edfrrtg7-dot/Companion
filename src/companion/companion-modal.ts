@@ -12,6 +12,7 @@
 
 import { renderDashboard, updateDashboard, start, stop } from "./dashboard";
 import { CrmService } from "./crm-service";
+import { resolveActionContext } from "./profile-resolver";
 import { diag } from "./dev";
 import { showAlert, showConfirm, showDelayModal, showImportSnippetsModal } from "./companion-dialogs";
 import { injectStyles } from "./companion-styles";
@@ -117,9 +118,13 @@ function renderActionsSection(container: HTMLElement, onFinanceClick: () => void
         const { snippets, target } = result;
         const importResult = await CrmService.importSnippetsToProfile(target, snippets, {
             confirmReplace: async (message) => showConfirm(message, "Replace", "Cancel"),
+            resolveProfile: () => {
+                const context = resolveActionContext();
+                return context ? { profileId: context.profileId, storageKey: context.storageKey } : null;
+            },
         });
         if (importResult.outcome === "success") {
-            updateDashboard();
+            updateDashboard(importResult.storageKey);
         }
         const reportHtml = importResult.message.replace(/\n/g, "<br>");
         await showAlert(reportHtml);

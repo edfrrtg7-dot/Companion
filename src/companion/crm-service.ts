@@ -38,6 +38,10 @@ export interface SnippetImportResult {
     readonly finalMessageCount: number;
     readonly duplicatesSkipped: number;
     readonly message: string;
+    /** Resolved target profile id (present when a profile was resolved). */
+    readonly profileId?: string;
+    /** Resolved target storage key (present when a profile was resolved). */
+    readonly storageKey?: string;
 }
 
 /**
@@ -46,6 +50,12 @@ export interface SnippetImportResult {
 export interface SnippetImportOptions {
     /** Optional confirmation gate invoked before replacement when the target already has messages. */
     readonly confirmReplace?: (message: string) => Promise<boolean>;
+    /**
+     * Optional resolver of the active GoldenBride profile at action time.
+     * Called once before confirmation and again immediately before the write;
+     * a changed resolution aborts the import without touching storage.
+     */
+    readonly resolveProfile?: () => { profileId: string; storageKey: string } | null;
 }
 
 /**
@@ -192,9 +202,11 @@ export class CrmService {
                 }
             }
 
-            // Fallback: check first item if nothing else found
+            // Fallback: check first item if nothing else found.
+            // A first-message sentinel 0 is never a configured delay, so it
+            // must not propagate to subsequent imported messages.
             const firstValue = first[property];
-            if (typeof firstValue === "number" && firstValue >= 0) return firstValue;
+            if (typeof firstValue === "number" && firstValue > 0) return firstValue;
 
             return DEFAULT_DELAY;
         };
@@ -385,6 +397,11 @@ export class CrmService {
         const targetName = target === "icebreaker" ? "IceBreaker" : "Broadcast";
         const { linesEntered, unique, duplicatesSkipped } = CrmService.normalizeSnippets(snippets);
 
+        // Resolved target profile. Set once the profile is known; every later
+        // stage (read, count, confirmation, write, verify, rollback, history)
+        // uses the same immutable storageKey.
+        let resolved: { profileId: string; storageKey: string } | null = null;
+
         const base = (overrides: Partial<SnippetImportResult>): SnippetImportResult => ({
             outcome: "failure",
             targetName,
@@ -394,6 +411,7 @@ export class CrmService {
             finalMessageCount: 0,
             duplicatesSkipped,
             message: "",
+            ...(resolved ? { profileId: resolved.profileId, storageKey: resolved.storageKey } : {}),
             ...overrides,
         });
 
@@ -401,13 +419,28 @@ export class CrmService {
             return base({ message: "No valid snippets entered. Existing messages were not changed." });
         }
 
-        const key = CrmService.findProfileKey();
-        const initial = key ? CrmService.readProfile(key) : null;
-        if (!key) {
-            return base({ message: "No CRM profile found." });
+        // Resolve the active GoldenBride profile at action time. When a
+        // resolver is provided it is authoritative; otherwise fall back to the
+        // first chat-sender-* key (legacy behaviour for callers without one).
+        if (options.resolveProfile) {
+            resolved = options.resolveProfile();
+        } else {
+            const key = CrmService.findProfileKey();
+            resolved = key ? { profileId: key.replace(CRM_STORAGE_PREFIX, ""), storageKey: key } : null;
         }
-        const profileId = key.replace(CRM_STORAGE_PREFIX, "");
 
+        if (!resolved) {
+            return base({
+                message: options.resolveProfile
+                    ? "Unable to determine the active GoldenBride profile. No data was changed."
+                    : "No CRM profile found.",
+            });
+        }
+
+        const key = resolved.storageKey;
+        const profileId = resolved.profileId;
+
+        const initial = CrmService.readProfile(key);
         if (!initial || !CrmService.validateProfile(initial)) {
             return base({ message: "Invalid profile structure." });
         }
@@ -420,7 +453,7 @@ export class CrmService {
 
         if (previousMessageCount > 0 && options.confirmReplace) {
             const confirmed = await options.confirmReplace(
-                `${targetName} currently has ${previousMessageCount} message(s).\n\nReplacing them will remove ${previousMessageCount} existing message(s) and rebuild the list from your snippets.`,
+                `${targetName} profile: ${profileId}\n\nThis profile currently has ${previousMessageCount} message(s).\nReplacing them will remove ${previousMessageCount} existing message(s) and rebuild the list from your snippets.`,
             );
             if (!confirmed) {
                 return base({
@@ -428,6 +461,27 @@ export class CrmService {
                     previousMessageCount,
                     finalMessageCount: previousMessageCount,
                     message: "Import cancelled. Existing messages were not changed.",
+                });
+            }
+        }
+
+        // Revalidate the active profile immediately before the write. The
+        // confirmation dialog may have been open while the user switched
+        // GoldenBride profiles or navigated; abort without touching storage.
+        if (options.resolveProfile) {
+            const revalidated = options.resolveProfile();
+            if (!revalidated) {
+                return base({
+                    previousMessageCount,
+                    finalMessageCount: previousMessageCount,
+                    message: "The active GoldenBride profile could no longer be determined. No data was changed.",
+                });
+            }
+            if (revalidated.storageKey !== key) {
+                return base({
+                    previousMessageCount,
+                    finalMessageCount: previousMessageCount,
+                    message: `The active GoldenBride profile changed from ${profileId} to ${revalidated.profileId}. No data was changed.`,
                 });
             }
         }
@@ -447,7 +501,7 @@ export class CrmService {
         const rebuilt = CrmService.buildReplacementMessages(messages, unique, delayValue);
 
         if (CrmService.messagesEquivalent(messages, rebuilt)) {
-            CrmService.recordImportHistory(profileId, {
+            CrmService.recordImportHistory(profileId, key, {
                 result: "no-change",
                 target,
                 linesEntered,
@@ -475,7 +529,7 @@ export class CrmService {
         const verified = CrmService.verifyReplacement(CrmService.readProfile(key), target, rebuilt);
         if (!verified) {
             const rollbackRestored = CrmService.rollbackTargetCollection(key, target, originalCollection, originalSnapshot);
-            CrmService.recordImportHistory(profileId, {
+            CrmService.recordImportHistory(profileId, key, {
                 result: "failed",
                 target,
                 linesEntered,
@@ -491,7 +545,7 @@ export class CrmService {
         }
 
         const finalMessageCount = CrmService.collectionCount(rebuilt);
-        CrmService.recordImportHistory(profileId, {
+        CrmService.recordImportHistory(profileId, key, {
             result: "success",
             target,
             linesEntered,
@@ -505,7 +559,7 @@ export class CrmService {
             outcome: "success",
             previousMessageCount,
             finalMessageCount,
-            message: `${targetName} snippets updated.\n\nLines entered: ${linesEntered}\nUnique snippets: ${unique.length}\nMessages replaced: ${previousMessageCount}\nMessages created: ${finalMessageCount}\nDuplicate lines skipped: ${duplicatesSkipped}\nFinal message count: ${finalMessageCount}`,
+            message: `${targetName} snippets updated for profile ${profileId}.\n\nLines entered: ${linesEntered}\nUnique snippets: ${unique.length}\nMessages replaced: ${previousMessageCount}\nMessages created: ${finalMessageCount}\nDuplicate lines skipped: ${duplicatesSkipped}\nFinal message count: ${finalMessageCount}`,
         });
     }
 
@@ -632,12 +686,14 @@ export class CrmService {
     /** Record an import history entry through the static dev import. Best-effort, never throws. */
     private static recordImportHistory(
         profileId: string,
-        entry: Omit<ImportHistoryEntry, "timestamp" | "profileKey" | "importedCount"> & { result: "success" | "no-change" | "failed" },
+        storageKey: string,
+        entry: Omit<ImportHistoryEntry, "timestamp" | "profileKey" | "importedCount" | "storageKey"> & { result: "success" | "no-change" | "failed" },
     ): void {
         try {
             addImportHistory({
                 timestamp: new Date().toISOString(),
                 profileKey: profileId,
+                storageKey,
                 importedCount: entry.result === "success" ? (entry.finalMessageCount ?? 0) : 0,
                 ...entry,
             });

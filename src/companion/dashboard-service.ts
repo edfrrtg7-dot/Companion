@@ -17,9 +17,9 @@ import { CrmService } from "./crm-service";
 type ProfileData = Record<string, unknown> | null;
 
 export class DashboardService {
-    static readCRMData(): ProfileData {
+    static readCRMData(storageKey?: string): ProfileData {
         try {
-            const key = CrmService.findProfileKey();
+            const key = storageKey ?? CrmService.findProfileKey();
             if (!key) return null;
             return CrmService.readProfile(key);
         } catch {

@@ -17,6 +17,7 @@
  */
 
 import { CrmService } from "./crm-service";
+import { resolveActiveProfile } from "./profile-resolver";
 import { StorageService } from "./storage-service";
 import { STORAGE_KEYS } from "./storage-keys";
 import { collectDiagnostics } from "./companion-diagnostics";
@@ -87,6 +88,21 @@ async function collectStorageData(): Promise<Record<string, string>> {
     selectedProfile = profileKey ? profileKey.replace("chat-sender-", "") : "Unknown";
     storageKey = profileKey || "Unknown";
 
+    // Active profile resolution (RC-STABLE-003-FIX-003)
+    const activeResolution = resolveActiveProfile();
+    const visibleProfileId = activeResolution.ok ? activeResolution.profileId : null;
+    const selectedId = profileKey ? profileKey.replace("chat-sender-", "") : null;
+    const profileMismatch = (visibleProfileId && selectedId)
+        ? (visibleProfileId === selectedId ? "NO" : "YES")
+        : "Unknown";
+    const activeSource = activeResolution.ok
+        ? (activeResolution.source === "sidebar-dom"
+            ? "GoldenBride sidebar DOM"
+            : activeResolution.source === "url"
+                ? "URL parameter"
+                : "Single profile fallback")
+        : "Unavailable";
+
     // Backup exists: check if any backup key relates to the current profile
     if (profileKey) {
         const profileId = profileKey.replace("chat-sender-", "");
@@ -149,6 +165,10 @@ async function collectStorageData(): Promise<Record<string, string>> {
         "Detected profiles": detectedProfiles,
         "Selected profile": selectedProfile,
         "Storage key": storageKey,
+        "Visible active profile": visibleProfileId ?? "Unavailable",
+        "Profile resolution source": activeSource,
+        "Profile resolution confidence": activeResolution.ok ? activeResolution.confidence : "NONE",
+        "Profile mismatch": profileMismatch,
         "Profile size (json)": profileSize,
         "Backup exists": backupExists,
         "Estimated localStorage usage (KB)": estimatedLocalStorageKB,
@@ -206,8 +226,16 @@ function collectRuntimeData(): Record<string, string> {
         uiHooksStatus = "Not applicable";
     }
 
+    // Active profile resolution mismatch (RC-STABLE-003-FIX-003)
+    const activeResolution = resolveActiveProfile();
+    const visibleProfileId = activeResolution.ok ? activeResolution.profileId : null;
+    const selectedId = profileKey ? profileKey.replace("chat-sender-", "") : null;
+    const profileMismatch = !!(visibleProfileId && selectedId && visibleProfileId !== selectedId);
+
     // Overall health: Not applicable UI hooks should not trigger "Attention Required"
-    const overallHealth = profileValid && (uiHooksPresent || uiHooksStatus === "Not applicable") ? "Healthy" : "Attention Required";
+    const overallHealth = profileMismatch || !profileValid || (!uiHooksPresent && uiHooksStatus !== "Not applicable")
+        ? "Attention Required"
+        : "Healthy";
 
     return {
         "Modules": info.modules.join(", ") || "None",
@@ -607,7 +635,7 @@ function collectImportHistory(): Record<string, string> {
             return;
         }
         const targetLabel = imp.target === "icebreaker" ? "IceBreaker" : "Broadcast";
-        result[`Import ${i + 1}`] = `${imp.timestamp} | ${imp.profileKey} | ${targetLabel} | ${imp.importedCount} items | ${imp.result} | lines ${imp.linesEntered ?? "-"} | unique ${imp.uniqueSnippets ?? "-"} | prev ${imp.previousMessageCount ?? "-"} | final ${imp.finalMessageCount ?? "-"} | dups ${imp.duplicatesSkipped ?? "-"}`;
+        result[`Import ${i + 1}`] = `${imp.timestamp} | ${imp.profileKey} | ${targetLabel} | ${imp.importedCount} items | ${imp.result} | key ${imp.storageKey ?? "-"} | lines ${imp.linesEntered ?? "-"} | unique ${imp.uniqueSnippets ?? "-"} | prev ${imp.previousMessageCount ?? "-"} | final ${imp.finalMessageCount ?? "-"} | dups ${imp.duplicatesSkipped ?? "-"}`;
     });
     result["Total Imports"] = String(imports.length);
     return result;
@@ -683,6 +711,10 @@ async function collectUserscriptDiagnostics(): Promise<Record<string, Record<str
          "Detected profiles": storageData["Detected profiles"] ?? "None",
          "Selected profile": storageData["Selected profile"] ?? "Unknown",
          "Storage key": storageData["Storage key"] ?? "Unknown",
+         "Visible active profile": storageData["Visible active profile"] ?? "Unavailable",
+         "Profile resolution source": storageData["Profile resolution source"] ?? "Unavailable",
+         "Profile resolution confidence": storageData["Profile resolution confidence"] ?? "NONE",
+         "Profile mismatch": storageData["Profile mismatch"] ?? "Unknown",
          "Profile size": storageData["Profile Size"] ?? "0 KB",
          "Backup exists": storageData["Backup exists"] ?? "No",
          "Estimated localStorage usage": storageData["Estimated localStorage usage (KB)"] ?? "N/A",

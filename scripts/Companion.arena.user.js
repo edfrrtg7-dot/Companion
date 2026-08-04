@@ -4145,7 +4145,7 @@
           }
         }
         const firstValue = first[property];
-        if (typeof firstValue === "number" && firstValue >= 0) return firstValue;
+        if (typeof firstValue === "number" && firstValue > 0) return firstValue;
         return DEFAULT_DELAY;
       };
       return {
@@ -4317,6 +4317,7 @@
     static async importSnippetsToProfile(target, snippets, options = {}) {
       const targetName = target === "icebreaker" ? "IceBreaker" : "Broadcast";
       const { linesEntered, unique, duplicatesSkipped } = _CrmService.normalizeSnippets(snippets);
+      let resolved = null;
       const base = (overrides) => ({
         outcome: "failure",
         targetName,
@@ -4326,17 +4327,26 @@
         finalMessageCount: 0,
         duplicatesSkipped,
         message: "",
+        ...resolved ? { profileId: resolved.profileId, storageKey: resolved.storageKey } : {},
         ...overrides
       });
       if (unique.length === 0) {
         return base({ message: "No valid snippets entered. Existing messages were not changed." });
       }
-      const key = _CrmService.findProfileKey();
-      const initial = key ? _CrmService.readProfile(key) : null;
-      if (!key) {
-        return base({ message: "No CRM profile found." });
+      if (options.resolveProfile) {
+        resolved = options.resolveProfile();
+      } else {
+        const key2 = _CrmService.findProfileKey();
+        resolved = key2 ? { profileId: key2.replace(CRM_STORAGE_PREFIX, ""), storageKey: key2 } : null;
       }
-      const profileId = key.replace(CRM_STORAGE_PREFIX, "");
+      if (!resolved) {
+        return base({
+          message: options.resolveProfile ? "Unable to determine the active GoldenBride profile. No data was changed." : "No CRM profile found."
+        });
+      }
+      const key = resolved.storageKey;
+      const profileId = resolved.profileId;
+      const initial = _CrmService.readProfile(key);
       if (!initial || !_CrmService.validateProfile(initial)) {
         return base({ message: "Invalid profile structure." });
       }
@@ -4347,8 +4357,9 @@
       const previousMessageCount = _CrmService.collectionCount(initialMessages);
       if (previousMessageCount > 0 && options.confirmReplace) {
         const confirmed = await options.confirmReplace(
-          `${targetName} currently has ${previousMessageCount} message(s).
+          `${targetName} profile: ${profileId}
 
+This profile currently has ${previousMessageCount} message(s).
 Replacing them will remove ${previousMessageCount} existing message(s) and rebuild the list from your snippets.`
         );
         if (!confirmed) {
@@ -4357,6 +4368,23 @@ Replacing them will remove ${previousMessageCount} existing message(s) and rebui
             previousMessageCount,
             finalMessageCount: previousMessageCount,
             message: "Import cancelled. Existing messages were not changed."
+          });
+        }
+      }
+      if (options.resolveProfile) {
+        const revalidated = options.resolveProfile();
+        if (!revalidated) {
+          return base({
+            previousMessageCount,
+            finalMessageCount: previousMessageCount,
+            message: "The active GoldenBride profile could no longer be determined. No data was changed."
+          });
+        }
+        if (revalidated.storageKey !== key) {
+          return base({
+            previousMessageCount,
+            finalMessageCount: previousMessageCount,
+            message: `The active GoldenBride profile changed from ${profileId} to ${revalidated.profileId}. No data was changed.`
           });
         }
       }
@@ -4371,7 +4399,7 @@ Replacing them will remove ${previousMessageCount} existing message(s) and rebui
       const delayValue = target === "icebreaker" ? _CrmService.readDelays(data).priv : _CrmService.readDelays(data).broad;
       const rebuilt = _CrmService.buildReplacementMessages(messages, unique, delayValue);
       if (_CrmService.messagesEquivalent(messages, rebuilt)) {
-        _CrmService.recordImportHistory(profileId, {
+        _CrmService.recordImportHistory(profileId, key, {
           result: "no-change",
           target,
           linesEntered,
@@ -4394,7 +4422,7 @@ Replacing them will remove ${previousMessageCount} existing message(s) and rebui
       const verified = _CrmService.verifyReplacement(_CrmService.readProfile(key), target, rebuilt);
       if (!verified) {
         const rollbackRestored = _CrmService.rollbackTargetCollection(key, target, originalCollection, originalSnapshot);
-        _CrmService.recordImportHistory(profileId, {
+        _CrmService.recordImportHistory(profileId, key, {
           result: "failed",
           target,
           linesEntered,
@@ -4407,7 +4435,7 @@ Replacing them will remove ${previousMessageCount} existing message(s) and rebui
         return base({ message });
       }
       const finalMessageCount = _CrmService.collectionCount(rebuilt);
-      _CrmService.recordImportHistory(profileId, {
+      _CrmService.recordImportHistory(profileId, key, {
         result: "success",
         target,
         linesEntered,
@@ -4420,7 +4448,7 @@ Replacing them will remove ${previousMessageCount} existing message(s) and rebui
         outcome: "success",
         previousMessageCount,
         finalMessageCount,
-        message: `${targetName} snippets updated.
+        message: `${targetName} snippets updated for profile ${profileId}.
 
 Lines entered: ${linesEntered}
 Unique snippets: ${unique.length}
@@ -4537,11 +4565,12 @@ Final message count: ${finalMessageCount}`
       return JSON.stringify(_CrmService.canonicalSnapshot(messages)) === JSON.stringify(originalSnapshot);
     }
     /** Record an import history entry through the static dev import. Best-effort, never throws. */
-    static recordImportHistory(profileId, entry) {
+    static recordImportHistory(profileId, storageKey, entry) {
       try {
         addImportHistory({
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           profileKey: profileId,
+          storageKey,
           importedCount: entry.result === "success" ? entry.finalMessageCount ?? 0 : 0,
           ...entry
         });
@@ -4549,6 +4578,103 @@ Final message count: ${finalMessageCount}`
       }
     }
   };
+
+  // ../src/companion/profile-resolver.ts
+  var CRM_STORAGE_PREFIX2 = "chat-sender-";
+  var PROFILE_KEY_RE = /^chat-sender-\d+$/;
+  var MAX_TEXT_NODES = 2e3;
+  function parseVisibleProfileId(text) {
+    if (typeof text !== "string") return null;
+    const m = /(?:^|\n)\s*ID\s*:\s*(\d{1,20})\s*(?=\n|$)/.exec(text);
+    if (!m) return null;
+    const id = m[1];
+    if (!/^\d+$/.test(id)) return null;
+    return id;
+  }
+  function extractProfileIdFromUrl(href) {
+    if (typeof href !== "string" || href.length === 0) return null;
+    const m = /[?&](?:id|profile|lady)[=/](\d{1,20})(?:&|$)/i.exec(href);
+    return m ? m[1] : null;
+  }
+  function extractVisibleProfileId(doc) {
+    if (!doc || !doc.body) return null;
+    try {
+      if (typeof window !== "undefined" && window.top && window !== window.top) return null;
+    } catch {
+    }
+    const ids = /* @__PURE__ */ new Set();
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    let scanned = 0;
+    while (node && scanned < MAX_TEXT_NODES) {
+      const id = parseVisibleProfileId(node.textContent ?? "");
+      if (id) ids.add(id);
+      node = walker.nextNode();
+      scanned++;
+    }
+    return ids.size === 1 ? [...ids][0] : null;
+  }
+  function listProfileKeys() {
+    try {
+      return Object.keys(localStorage).filter((k) => PROFILE_KEY_RE.test(k)).sort();
+    } catch {
+    }
+    return [];
+  }
+  function resolveActiveProfile() {
+    const visibleId = extractVisibleProfileId(typeof document !== "undefined" ? document : null);
+    if (visibleId) {
+      return {
+        ok: true,
+        profileId: visibleId,
+        storageKey: `${CRM_STORAGE_PREFIX2}${visibleId}`,
+        source: "sidebar-dom",
+        confidence: "HIGH"
+      };
+    }
+    try {
+      const urlId = extractProfileIdFromUrl(window.location.href);
+      if (urlId) {
+        return {
+          ok: true,
+          profileId: urlId,
+          storageKey: `${CRM_STORAGE_PREFIX2}${urlId}`,
+          source: "url",
+          confidence: "MEDIUM"
+        };
+      }
+    } catch {
+    }
+    const profiles = listProfileKeys();
+    if (profiles.length === 1) {
+      const id = profiles[0].replace(CRM_STORAGE_PREFIX2, "");
+      return {
+        ok: true,
+        profileId: id,
+        storageKey: profiles[0],
+        source: "single-profile",
+        confidence: "LOW"
+      };
+    }
+    return {
+      ok: false,
+      profileId: null,
+      storageKey: null,
+      source: "blocked",
+      confidence: "NONE",
+      reason: "Active GoldenBride profile could not be determined safely."
+    };
+  }
+  function resolveActionContext() {
+    const resolution = resolveActiveProfile();
+    if (!resolution.ok || !resolution.profileId || !resolution.storageKey) return null;
+    return {
+      profileId: resolution.profileId,
+      storageKey: resolution.storageKey,
+      source: resolution.source,
+      confidence: resolution.confidence
+    };
+  }
 
   // ../src/companion/storage-version.ts
   var STORAGE_VERSION = 2;
@@ -4676,6 +4802,11 @@ Final message count: ${finalMessageCount}`
     detectedProfiles = allProfiles.length > 0 ? allProfiles.join(", ") : "None";
     selectedProfile = profileKey ? profileKey.replace("chat-sender-", "") : "Unknown";
     storageKey = profileKey || "Unknown";
+    const activeResolution = resolveActiveProfile();
+    const visibleProfileId = activeResolution.ok ? activeResolution.profileId : null;
+    const selectedId = profileKey ? profileKey.replace("chat-sender-", "") : null;
+    const profileMismatch = visibleProfileId && selectedId ? visibleProfileId === selectedId ? "NO" : "YES" : "Unknown";
+    const activeSource = activeResolution.ok ? activeResolution.source === "sidebar-dom" ? "GoldenBride sidebar DOM" : activeResolution.source === "url" ? "URL parameter" : "Single profile fallback" : "Unavailable";
     if (profileKey) {
       const profileId = profileKey.replace("chat-sender-", "");
       backupExists = allBackupKeys.some((k) => k.includes(profileId)) ? "Yes" : "No";
@@ -4732,6 +4863,10 @@ Final message count: ${finalMessageCount}`
       "Detected profiles": detectedProfiles,
       "Selected profile": selectedProfile,
       "Storage key": storageKey,
+      "Visible active profile": visibleProfileId ?? "Unavailable",
+      "Profile resolution source": activeSource,
+      "Profile resolution confidence": activeResolution.ok ? activeResolution.confidence : "NONE",
+      "Profile mismatch": profileMismatch,
       "Profile size (json)": profileSize,
       "Backup exists": backupExists,
       "Estimated localStorage usage (KB)": estimatedLocalStorageKB,
@@ -4773,7 +4908,11 @@ Final message count: ${finalMessageCount}`
     } else {
       uiHooksStatus = "Not applicable";
     }
-    const overallHealth = profileValid && (uiHooksPresent || uiHooksStatus === "Not applicable") ? "Healthy" : "Attention Required";
+    const activeResolution = resolveActiveProfile();
+    const visibleProfileId = activeResolution.ok ? activeResolution.profileId : null;
+    const selectedId = profileKey ? profileKey.replace("chat-sender-", "") : null;
+    const profileMismatch = !!(visibleProfileId && selectedId && visibleProfileId !== selectedId);
+    const overallHealth = profileMismatch || !profileValid || !uiHooksPresent && uiHooksStatus !== "Not applicable" ? "Attention Required" : "Healthy";
     return {
       "Modules": info.modules.join(", ") || "None",
       "Module Count": String(info.modules.length),
@@ -5076,7 +5215,7 @@ Final message count: ${finalMessageCount}`
         return;
       }
       const targetLabel = imp.target === "icebreaker" ? "IceBreaker" : "Broadcast";
-      result[`Import ${i + 1}`] = `${imp.timestamp} | ${imp.profileKey} | ${targetLabel} | ${imp.importedCount} items | ${imp.result} | lines ${imp.linesEntered ?? "-"} | unique ${imp.uniqueSnippets ?? "-"} | prev ${imp.previousMessageCount ?? "-"} | final ${imp.finalMessageCount ?? "-"} | dups ${imp.duplicatesSkipped ?? "-"}`;
+      result[`Import ${i + 1}`] = `${imp.timestamp} | ${imp.profileKey} | ${targetLabel} | ${imp.importedCount} items | ${imp.result} | key ${imp.storageKey ?? "-"} | lines ${imp.linesEntered ?? "-"} | unique ${imp.uniqueSnippets ?? "-"} | prev ${imp.previousMessageCount ?? "-"} | final ${imp.finalMessageCount ?? "-"} | dups ${imp.duplicatesSkipped ?? "-"}`;
     });
     result["Total Imports"] = String(imports.length);
     return result;
@@ -5156,6 +5295,10 @@ Final message count: ${finalMessageCount}`
       "Detected profiles": storageData["Detected profiles"] ?? "None",
       "Selected profile": storageData["Selected profile"] ?? "Unknown",
       "Storage key": storageData["Storage key"] ?? "Unknown",
+      "Visible active profile": storageData["Visible active profile"] ?? "Unavailable",
+      "Profile resolution source": storageData["Profile resolution source"] ?? "Unavailable",
+      "Profile resolution confidence": storageData["Profile resolution confidence"] ?? "NONE",
+      "Profile mismatch": storageData["Profile mismatch"] ?? "Unknown",
       "Profile size": storageData["Profile Size"] ?? "0 KB",
       "Backup exists": storageData["Backup exists"] ?? "No",
       "Estimated localStorage usage": storageData["Estimated localStorage usage (KB)"] ?? "N/A"
@@ -5592,9 +5735,9 @@ Final message count: ${finalMessageCount}`
 
   // ../src/companion/dashboard-service.ts
   var DashboardService = class {
-    static readCRMData() {
+    static readCRMData(storageKey) {
       try {
-        const key = CrmService.findProfileKey();
+        const key = storageKey ?? CrmService.findProfileKey();
         if (!key) return null;
         return CrmService.readProfile(key);
       } catch {
@@ -5650,9 +5793,9 @@ Final message count: ${finalMessageCount}`
     dot.className = isActive ? "ab-status-dot active" : "ab-status-dot";
     return dot;
   }
-  function renderDashboard(container) {
+  function renderDashboard(container, storageKey) {
     container.innerHTML = "";
-    const data = DashboardService.readCRMData();
+    const data = DashboardService.readCRMData(storageKey);
     if (!data) {
       const empty = document.createElement("div");
       empty.className = "ab-empty";
@@ -5686,10 +5829,10 @@ Final message count: ${finalMessageCount}`
     }
     container.appendChild(grid);
   }
-  function updateDashboard() {
+  function updateDashboard(storageKey) {
     const container = document.getElementById("ab-status-grid");
     if (container) {
-      renderDashboard(container);
+      renderDashboard(container, storageKey);
     }
   }
   var dashboardInterval = null;
@@ -6555,10 +6698,14 @@ Snippet 3
       if (!result) return;
       const { snippets, target } = result;
       const importResult = await CrmService.importSnippetsToProfile(target, snippets, {
-        confirmReplace: async (message) => showConfirm(message, "Replace", "Cancel")
+        confirmReplace: async (message) => showConfirm(message, "Replace", "Cancel"),
+        resolveProfile: () => {
+          const context = resolveActionContext();
+          return context ? { profileId: context.profileId, storageKey: context.storageKey } : null;
+        }
       });
       if (importResult.outcome === "success") {
-        updateDashboard();
+        updateDashboard(importResult.storageKey);
       }
       const reportHtml = importResult.message.replace(/\n/g, "<br>");
       await showAlert(reportHtml);

@@ -82,9 +82,9 @@ function createStatusDot(isActive: boolean): HTMLSpanElement {
 }
 
 /** Render Dashboard cards to the container element. */
-function renderDashboard(container: HTMLElement): void {
+function renderDashboard(container: HTMLElement, storageKey?: string): void {
     container.innerHTML = "";
-    const data = DashboardService.readCRMData();
+    const data = DashboardService.readCRMData(storageKey);
 
     if (!data) {
         const empty = document.createElement("div");
@@ -129,10 +129,10 @@ function renderDashboard(container: HTMLElement): void {
 }
 
 /** Update Dashboard when visible. */
-function updateDashboard(): void {
+function updateDashboard(storageKey?: string): void {
     const container = document.getElementById("ab-status-grid");
     if (container) {
-        renderDashboard(container);
+        renderDashboard(container, storageKey);
     }
 }
 

@@ -155,6 +155,8 @@ export interface ImportHistoryEntry {
     readonly previousMessageCount?: number;
     readonly finalMessageCount?: number;
     readonly duplicatesSkipped?: number;
+    /** Optional RC-STABLE-003-FIX-003 field: full target storage key. */
+    readonly storageKey?: string;
 }
 
 /** Maximum import history entries. */
