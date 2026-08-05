@@ -46,6 +46,9 @@ All runtime evidence is harness output (Node + JSDOM), captured this session:
   plus 5 supplementary assertions (C2b, C7b, C8b, C20b, C27a).
 - Finance regression harnesses (rebuilt from current source, rerun at 15:51 local, Day
   shift): all exit 0, 0 failures (see Section 16).
+- Live browser verification (user-run Chrome session against GoldenBride, using the
+  unpacked `extension/dist/` build): 13/15 scenarios VERIFIED, 2 positive-path scenarios
+  UNKNOWN (see Section 18).
 
 ## 4. Existing Architecture
 
@@ -322,11 +325,32 @@ The gitignored `extension/dist/content.js` was verified to contain the new indic
 
 ## 18. Browser Verification
 
-Live browser verification (loading the unpacked extension from `extension/dist/`,
-interacting with the Finance widget header on a GoldenBride page) was NOT executed in this
-session. Browser runtime behaviour — layout of the new indicator/spacer at real widths,
-dropdown rendering inside the scrollable body, real double-click/drag feel — is therefore
-**UNKNOWN** and requires live confirmation before user-facing validation.
+Live browser verification WAS executed in this session (user-run, loading the unpacked
+extension from `extension/dist/` in Chrome against a live GoldenBride profile). Results:
+
+| Scenario | Result |
+| --- | --- |
+| Old gold dot removed | **VERIFIED** (PASS) |
+| Header order and spacing | **VERIFIED** (PASS) |
+| Narrow-width overlap | **VERIFIED** (PASS) |
+| Shift selector removed from header | **VERIFIED** (PASS) |
+| Shift selector present in body | **VERIFIED** (PASS) |
+| Shift change refreshes data | **VERIFIED** (PASS) |
+| Shift dropdown stays inside widget | **VERIFIED** (PASS) |
+| Indicator hidden on first successful CASH refresh | **VERIFIED** (PASS) |
+| Indicator hidden on repeated refresh without new data | **VERIFIED** (PASS) |
+| Indicator appears after a real new transaction | **UNKNOWN** — no new transaction was available during testing; the positive path remains covered only by the DOM harness (check 8) |
+| Indicator clears on next refresh without new data | **UNKNOWN** — depends on the unverified positive-path scenario |
+| Indicator clears on date/shift change | **VERIFIED** (PASS) |
+| Header/spacer double-click toggles once | **VERIFIED** (PASS) |
+| Interactive controls do not cause accidental toggle | **VERIFIED** (PASS) |
+| Indicator hidden while collapsed | **VERIFIED** (PASS) |
+
+13 of 15 scenarios VERIFIED directly in a real browser; the 2 remaining UNKNOWN items are
+the same end-to-end "real new transaction" chain, which requires a payment to actually
+appear between two manual refreshes and could not be exercised during testing. The
+underlying logic for that chain is covered by the DOM harness (checks 7–8: identical
+refresh stays hidden, new identity shows).
 
 ## 19. Remaining Limitations
 
@@ -346,12 +370,16 @@ dropdown rendering inside the scrollable body, real double-click/drag feel — i
 
 ## 20. Unknowns
 
-- Live browser rendering/layout of the indicator, spacer, and relocated shift selector:
-  UNKNOWN (not executed this session).
+- Positive-path end-to-end new-transaction display in a live browser (indicator appears on a
+  real new transaction, then clears on the next identical refresh): UNKNOWN — no new
+  transaction was available during browser verification; covered by DOM harness checks 7–8.
 - Whether a very short widget height clips the opened shift dropdown in a real browser:
-  UNKNOWN (DOM harness cannot compute layout).
+  UNKNOWN (DOM harness cannot compute layout; browser verification confirmed the dropdown
+  stays inside the widget at the tested height).
 - Real-device double-click timing interplay with the drag gesture: UNKNOWN (jsdom does not
-  model pointer sequences; harness used dispatched `dblclick` events).
+  model pointer sequences; harness used dispatched `dblclick` events). Browser verification
+  confirmed the toggle fires exactly once and interactive controls do not accidentally
+  toggle.
 
 ## 21. Stable Release Readiness
 
@@ -364,6 +392,8 @@ dropdown rendering inside the scrollable body, real double-click/drag feel — i
   Finance internals; no new dependencies.
 - Controller and Finance logic untouched per scope decisions.
 - No unrelated files modified.
-- Remaining gap: live browser verification (Section 18). Until performed, browser-level
-  behaviour is UNKNOWN; the commit is ready for merge with live confirmation as the only
-  open item.
+- Remaining gap: the two positive-path browser scenarios (Section 18) — indicator appearing
+  on a real new transaction and clearing on the next identical refresh — are UNKNOWN because
+  no new transaction was available during the live session; the DOM harness covers the
+  underlying logic (checks 7–8). All other browser scenarios (13/15) are VERIFIED, and the
+  commit is ready for release with those two scenarios as the only open items.
