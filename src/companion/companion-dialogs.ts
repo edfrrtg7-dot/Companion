@@ -6,6 +6,7 @@
  */
 
 import { injectStyles } from "./companion-styles";
+import { CrmService } from "./crm-service";
 
 const DEFAULT_DELAY = 65;
 const MIN_DELAY = 1;
@@ -124,6 +125,19 @@ Snippet 2
 Snippet 3
 ..."></textarea>
                     </div>
+                    <div class="ab-import-stats" id="ab-import-stats" hidden>
+                        <div class="ab-import-stats-title">Detected snippets</div>
+                        <div class="ab-import-stats-grid">
+                            <span class="ab-import-stat-label">Lines</span>
+                            <span class="ab-import-stat-value" id="ab-import-stat-lines">0</span>
+                            <span class="ab-import-stat-label">Unique</span>
+                            <span class="ab-import-stat-value" id="ab-import-stat-unique">0</span>
+                            <span class="ab-import-stat-label">Duplicates</span>
+                            <span class="ab-import-stat-value" id="ab-import-stat-duplicates">0</span>
+                            <span class="ab-import-stat-label">Empty</span>
+                            <span class="ab-import-stat-value" id="ab-import-stat-empty">0</span>
+                        </div>
+                    </div>
                     <div class="ab-import-error" id="ab-import-error" hidden>
                         Please paste at least one non-empty snippet before importing.
                     </div>
@@ -136,6 +150,11 @@ Snippet 3
         const gutterNumbers = document.getElementById("ab-import-gutter-numbers") as HTMLDivElement;
         const errorBox = document.getElementById("ab-import-error") as HTMLDivElement;
         const editor = document.getElementById("ab-import-editor") as HTMLDivElement;
+        const statsPanel = document.getElementById("ab-import-stats") as HTMLDivElement;
+        const statLines = document.getElementById("ab-import-stat-lines") as HTMLSpanElement;
+        const statUnique = document.getElementById("ab-import-stat-unique") as HTMLSpanElement;
+        const statDuplicates = document.getElementById("ab-import-stat-duplicates") as HTMLSpanElement;
+        const statEmpty = document.getElementById("ab-import-stat-empty") as HTMLSpanElement;
         textarea.focus();
 
         const updateLineNumbers = (): void => {
@@ -148,11 +167,31 @@ Snippet 3
             }
         };
 
+        /**
+         * Live import preview — reuses the exact importer pipeline
+         * (CrmService.normalizeSnippets), so the statistics always match the
+         * actual import result. Pure preview: no import, no profile, no storage.
+         * Lines = non-empty trimmed lines (as the importer counts "Lines
+         * entered"); Empty = remaining raw lines the importer skips.
+         */
+        const updateStats = (): void => {
+            const rawLines = textarea.value.split(/\r?\n/);
+            const { linesEntered, unique, duplicatesSkipped } = CrmService.normalizeSnippets(rawLines);
+            statLines.textContent = String(linesEntered);
+            statUnique.textContent = String(unique.length);
+            statDuplicates.textContent = String(duplicatesSkipped);
+            statEmpty.textContent = String(Math.max(0, rawLines.length - linesEntered));
+            statsPanel.hidden = false;
+        };
+
         const syncGutterScroll = (): void => {
             gutterNumbers.style.transform = `translateY(${-textarea.scrollTop}px)`;
         };
 
-        const onInput = (): void => updateLineNumbers();
+        const onInput = (): void => {
+            updateLineNumbers();
+            updateStats();
+        };
         const onScroll = (): void => syncGutterScroll();
         textarea.addEventListener("input", onInput);
         textarea.addEventListener("scroll", onScroll);

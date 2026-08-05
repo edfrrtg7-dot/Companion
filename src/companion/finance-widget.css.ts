@@ -310,8 +310,28 @@ export const FINANCE_WIDGET_CSS = `
     opacity: 0.7;
 }
 
+/* Shift section — first control inside the body, visually separated using the
+   existing Finance design language (bordered rounded panel). */
+.ab-finance-shift-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+}
+
+.ab-finance-shift-section-label {
+    font-size: clamp(10px, 2vw, 11px);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: rgba(255,255,255,0.5);
+}
+
 .ab-finance-shift-time-range {
     font-weight: 500;
+    font-size: clamp(10px, 2vw, 11px);
     color: rgba(255,255,255,0.7);
 }
 

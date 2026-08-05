@@ -429,6 +429,37 @@ export const COMPANION_STYLES_CSS = `
 
 .ab-import-error[hidden] { display: none; }
 
+/* Live import preview statistics */
+.ab-import-stats {
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--ab-border);
+    margin-bottom: 8px;
+}
+.ab-import-stats[hidden] { display: none; }
+.ab-import-stats-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ab-text);
+    margin-bottom: 8px;
+}
+.ab-import-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 16px;
+}
+.ab-import-stat-label {
+    font-size: 12px;
+    color: var(--ab-text-dim);
+}
+.ab-import-stat-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ab-text);
+    text-align: right;
+}
+
 .ab-btn-import {
     padding: 12px 16px;
     font-size: 13px;

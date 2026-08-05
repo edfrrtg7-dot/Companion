@@ -477,6 +477,11 @@ export class FinanceWidget extends CompanionWindow {
         const headerSpacer = document.createElement("div");
         headerSpacer.className = `${this.classPrefix}-header-spacer`;
 
+        // Left flexible spacer — mirrors the right spacer so the CASH cluster
+        // (CASH + indicator) is visually centred between FINANCE and actions.
+        const headerSpacerLeft = document.createElement("div");
+        headerSpacerLeft.className = `${this.classPrefix}-header-spacer`;
+
         // Collapse button
         const collapseBtn = document.createElement("button");
         collapseBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-collapse-btn`;
@@ -493,6 +498,7 @@ export class FinanceWidget extends CompanionWindow {
         actions.appendChild(closeBtn);
 
         dragHandle.appendChild(title);
+        dragHandle.appendChild(headerSpacerLeft);
         dragHandle.appendChild(cashIndicator);
         dragHandle.appendChild(newTxIndicator);
         dragHandle.appendChild(headerSpacer);
@@ -551,6 +557,12 @@ export class FinanceWidget extends CompanionWindow {
         if (!this.shiftBtn || !this.shiftDropdown) return;
         const def = FinanceShift.getDefinition(shift);
         this.shiftBtn.textContent = `${def.label} \u25BE`;
+
+        // Keep the Shift-section time-range caption in sync with the shift.
+        const caption = this.contentEl?.querySelector(`.${this.classPrefix}-shift-time-range`);
+        if (caption) {
+            caption.textContent = `${def.label} (${def.timeDisplay})`;
+        }
 
         const options = this.shiftDropdown.querySelectorAll(`.${this.classPrefix}-shift-option`);
         options.forEach((opt) => {
@@ -804,6 +816,32 @@ export class FinanceWidget extends CompanionWindow {
         const shiftInfo = document.createElement("div");
         shiftInfo.className = `${this.classPrefix}-shift-info`;
 
+        // Shift section — the first control inside the body, visually separated
+        // from the rest with a divider. Caption updates together with the shift.
+        const shiftSection = document.createElement("div");
+        shiftSection.className = `${this.classPrefix}-shift-section`;
+
+        const shiftSectionLabel = document.createElement("div");
+        shiftSectionLabel.className = `${this.classPrefix}-shift-section-label`;
+        shiftSectionLabel.textContent = "Shift";
+
+        // Shift selector — lives in the expanded body, first control inside it.
+        const select = this.createShiftSelector();
+
+        const shiftCaption = document.createElement("div");
+        shiftCaption.className = `${this.classPrefix}-shift-time-range`;
+        shiftCaption.textContent = `${def.label} (${def.timeDisplay})`;
+
+        shiftSection.appendChild(shiftSectionLabel);
+        shiftSection.appendChild(select);
+        shiftSection.appendChild(shiftCaption);
+        shiftInfo.appendChild(shiftSection);
+
+        const shiftDivider = document.createElement("div");
+        shiftDivider.className = `${this.classPrefix}-divider`;
+        shiftInfo.appendChild(shiftDivider);
+
+        // Date row — displayed below the Shift section.
         const row1 = document.createElement("div");
         row1.className = `${this.classPrefix}-shift-info-row`;
         const label1 = document.createElement("span");
@@ -816,22 +854,6 @@ export class FinanceWidget extends CompanionWindow {
         row1.appendChild(value1);
 
         shiftInfo.appendChild(row1);
-
-        // Shift selector — lives in the expanded body, near the date/shift info.
-        const select = this.createShiftSelector();
-        shiftInfo.appendChild(select);
-
-        const rowShiftTime = document.createElement("div");
-        rowShiftTime.className = `${this.classPrefix}-shift-info-row`;
-        const labelShift = document.createElement("span");
-        labelShift.className = `${this.classPrefix}-label`;
-        labelShift.textContent = "Shift:";
-        const valueShift = document.createElement("span");
-        valueShift.className = `${this.classPrefix}-value ${this.classPrefix}-shift-time-range`;
-        valueShift.textContent = `${def.label} (${def.timeDisplay})`;
-        rowShiftTime.appendChild(labelShift);
-        rowShiftTime.appendChild(valueShift);
-        shiftInfo.appendChild(rowShiftTime);
 
         this.updateShiftButton(shift);
 

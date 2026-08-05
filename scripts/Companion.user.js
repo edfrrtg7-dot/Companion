@@ -3054,6 +3054,8 @@
       actions.className = `${this.classPrefix}-header-actions`;
       const headerSpacer = document.createElement("div");
       headerSpacer.className = `${this.classPrefix}-header-spacer`;
+      const headerSpacerLeft = document.createElement("div");
+      headerSpacerLeft.className = `${this.classPrefix}-header-spacer`;
       const collapseBtn = document.createElement("button");
       collapseBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-collapse-btn`;
       collapseBtn.title = "Collapse";
@@ -3065,6 +3067,7 @@
       actions.appendChild(collapseBtn);
       actions.appendChild(closeBtn);
       dragHandle.appendChild(title);
+      dragHandle.appendChild(headerSpacerLeft);
       dragHandle.appendChild(cashIndicator);
       dragHandle.appendChild(newTxIndicator);
       dragHandle.appendChild(headerSpacer);
@@ -3105,6 +3108,10 @@
       if (!this.shiftBtn || !this.shiftDropdown) return;
       const def = FinanceShift.getDefinition(shift);
       this.shiftBtn.textContent = `${def.label} \u25BE`;
+      const caption = this.contentEl?.querySelector(`.${this.classPrefix}-shift-time-range`);
+      if (caption) {
+        caption.textContent = `${def.label} (${def.timeDisplay})`;
+      }
       const options = this.shiftDropdown.querySelectorAll(`.${this.classPrefix}-shift-option`);
       options.forEach((opt) => {
         const htmlOpt = opt;
@@ -3282,6 +3289,22 @@
       this.resetTxState();
       const shiftInfo = document.createElement("div");
       shiftInfo.className = `${this.classPrefix}-shift-info`;
+      const shiftSection = document.createElement("div");
+      shiftSection.className = `${this.classPrefix}-shift-section`;
+      const shiftSectionLabel = document.createElement("div");
+      shiftSectionLabel.className = `${this.classPrefix}-shift-section-label`;
+      shiftSectionLabel.textContent = "Shift";
+      const select = this.createShiftSelector();
+      const shiftCaption = document.createElement("div");
+      shiftCaption.className = `${this.classPrefix}-shift-time-range`;
+      shiftCaption.textContent = `${def.label} (${def.timeDisplay})`;
+      shiftSection.appendChild(shiftSectionLabel);
+      shiftSection.appendChild(select);
+      shiftSection.appendChild(shiftCaption);
+      shiftInfo.appendChild(shiftSection);
+      const shiftDivider = document.createElement("div");
+      shiftDivider.className = `${this.classPrefix}-divider`;
+      shiftInfo.appendChild(shiftDivider);
       const row1 = document.createElement("div");
       row1.className = `${this.classPrefix}-shift-info-row`;
       const label1 = document.createElement("span");
@@ -3293,19 +3316,6 @@
       row1.appendChild(label1);
       row1.appendChild(value1);
       shiftInfo.appendChild(row1);
-      const select = this.createShiftSelector();
-      shiftInfo.appendChild(select);
-      const rowShiftTime = document.createElement("div");
-      rowShiftTime.className = `${this.classPrefix}-shift-info-row`;
-      const labelShift = document.createElement("span");
-      labelShift.className = `${this.classPrefix}-label`;
-      labelShift.textContent = "Shift:";
-      const valueShift = document.createElement("span");
-      valueShift.className = `${this.classPrefix}-value ${this.classPrefix}-shift-time-range`;
-      valueShift.textContent = `${def.label} (${def.timeDisplay})`;
-      rowShiftTime.appendChild(labelShift);
-      rowShiftTime.appendChild(valueShift);
-      shiftInfo.appendChild(rowShiftTime);
       this.updateShiftButton(shift);
       const divider1 = document.createElement("div");
       divider1.className = `${this.classPrefix}-divider`;
@@ -3789,8 +3799,28 @@
     opacity: 0.7;
 }
 
+/* Shift section \u2014 first control inside the body, visually separated using the
+   existing Finance design language (bordered rounded panel). */
+.ab-finance-shift-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+}
+
+.ab-finance-shift-section-label {
+    font-size: clamp(10px, 2vw, 11px);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: rgba(255,255,255,0.5);
+}
+
 .ab-finance-shift-time-range {
     font-weight: 500;
+    font-size: clamp(10px, 2vw, 11px);
     color: rgba(255,255,255,0.7);
 }
 
@@ -6472,6 +6502,37 @@ Final message count: ${finalMessageCount}`
 
 .ab-import-error[hidden] { display: none; }
 
+/* Live import preview statistics */
+.ab-import-stats {
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--ab-border);
+    margin-bottom: 8px;
+}
+.ab-import-stats[hidden] { display: none; }
+.ab-import-stats-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ab-text);
+    margin-bottom: 8px;
+}
+.ab-import-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 16px;
+}
+.ab-import-stat-label {
+    font-size: 12px;
+    color: var(--ab-text-dim);
+}
+.ab-import-stat-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ab-text);
+    text-align: right;
+}
+
 .ab-btn-import {
     padding: 12px 16px;
     font-size: 13px;
@@ -6693,6 +6754,19 @@ Snippet 2
 Snippet 3
 ..."></textarea>
                     </div>
+                    <div class="ab-import-stats" id="ab-import-stats" hidden>
+                        <div class="ab-import-stats-title">Detected snippets</div>
+                        <div class="ab-import-stats-grid">
+                            <span class="ab-import-stat-label">Lines</span>
+                            <span class="ab-import-stat-value" id="ab-import-stat-lines">0</span>
+                            <span class="ab-import-stat-label">Unique</span>
+                            <span class="ab-import-stat-value" id="ab-import-stat-unique">0</span>
+                            <span class="ab-import-stat-label">Duplicates</span>
+                            <span class="ab-import-stat-value" id="ab-import-stat-duplicates">0</span>
+                            <span class="ab-import-stat-label">Empty</span>
+                            <span class="ab-import-stat-value" id="ab-import-stat-empty">0</span>
+                        </div>
+                    </div>
                     <div class="ab-import-error" id="ab-import-error" hidden>
                         Please paste at least one non-empty snippet before importing.
                     </div>
@@ -6704,6 +6778,11 @@ Snippet 3
       const gutterNumbers = document.getElementById("ab-import-gutter-numbers");
       const errorBox = document.getElementById("ab-import-error");
       const editor = document.getElementById("ab-import-editor");
+      const statsPanel = document.getElementById("ab-import-stats");
+      const statLines = document.getElementById("ab-import-stat-lines");
+      const statUnique = document.getElementById("ab-import-stat-unique");
+      const statDuplicates = document.getElementById("ab-import-stat-duplicates");
+      const statEmpty = document.getElementById("ab-import-stat-empty");
       textarea.focus();
       const updateLineNumbers = () => {
         const count = Math.max(1, textarea.value.split("\n").length);
@@ -6714,10 +6793,22 @@ Snippet 3
           editor.classList.remove("ab-import-editor-error");
         }
       };
+      const updateStats = () => {
+        const rawLines = textarea.value.split(/\r?\n/);
+        const { linesEntered, unique, duplicatesSkipped } = CrmService.normalizeSnippets(rawLines);
+        statLines.textContent = String(linesEntered);
+        statUnique.textContent = String(unique.length);
+        statDuplicates.textContent = String(duplicatesSkipped);
+        statEmpty.textContent = String(Math.max(0, rawLines.length - linesEntered));
+        statsPanel.hidden = false;
+      };
       const syncGutterScroll = () => {
         gutterNumbers.style.transform = `translateY(${-textarea.scrollTop}px)`;
       };
-      const onInput = () => updateLineNumbers();
+      const onInput = () => {
+        updateLineNumbers();
+        updateStats();
+      };
       const onScroll = () => syncGutterScroll();
       textarea.addEventListener("input", onInput);
       textarea.addEventListener("scroll", onScroll);
