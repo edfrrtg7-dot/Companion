@@ -1444,6 +1444,7 @@
     Operation2["TextChatBonusCoins"] = "TextChatBonusCoins";
     Operation2["TextChatSatellite"] = "TextChatSatellite";
     Operation2["EmailSendSatellite"] = "EmailSendSatellite";
+    Operation2["VideoChatSatellite"] = "VideoChatSatellite";
     return Operation2;
   })(Operation || {});
   var VALID_OPERATIONS = new Set(Object.values(Operation));

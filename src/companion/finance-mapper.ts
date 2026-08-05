@@ -50,6 +50,7 @@ export enum Operation {
     TextChatBonusCoins = "TextChatBonusCoins",
     TextChatSatellite = "TextChatSatellite",
     EmailSendSatellite = "EmailSendSatellite",
+    VideoChatSatellite = "VideoChatSatellite",
 }
 
 /** Set of all valid operation strings for runtime validation. */
