@@ -558,6 +558,8 @@ export const COMPANION_STYLES_CSS = `
     font-family: var(--ab-font);
     font-size: 13px;
     line-height: 1.5;
+    white-space: pre;
+    overflow-x: auto;
     box-sizing: border-box;
     resize: none;
     outline: none;

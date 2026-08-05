@@ -119,7 +119,8 @@ export function showImportSnippetsModal(): Promise<ImportSnippetsResult | null> 
                         <div class="ab-import-gutter" id="ab-import-gutter">
                             <div class="ab-import-gutter-numbers" id="ab-import-gutter-numbers">1</div>
                         </div>
-                        <textarea class="ab-import-textarea" id="ab-import-textarea" 
+                        <textarea class="ab-import-textarea" id="ab-import-textarea"
+                            wrap="off"
                             placeholder="Snippet 1
 Snippet 2
 Snippet 3
@@ -172,15 +173,23 @@ Snippet 3
          * (CrmService.normalizeSnippets), so the statistics always match the
          * actual import result. Pure preview: no import, no profile, no storage.
          * Lines = non-empty trimmed lines (as the importer counts "Lines
-         * entered"); Empty = remaining raw lines the importer skips.
+         * entered"); Empty = empty lines between meaningful lines. Trailing
+         * empty/whitespace-only lines after the last meaningful line are
+         * treated as file-structure whitespace and ignored (a final newline
+         * is not a blank snippet row).
          */
         const updateStats = (): void => {
             const rawLines = textarea.value.split(/\r?\n/);
             const { linesEntered, unique, duplicatesSkipped } = CrmService.normalizeSnippets(rawLines);
+            let lastMeaningful = rawLines.length;
+            while (lastMeaningful > 0 && rawLines[lastMeaningful - 1].trim().length === 0) {
+                lastMeaningful--;
+            }
+            const empty = Math.max(0, lastMeaningful - linesEntered);
             statLines.textContent = String(linesEntered);
             statUnique.textContent = String(unique.length);
             statDuplicates.textContent = String(duplicatesSkipped);
-            statEmpty.textContent = String(Math.max(0, rawLines.length - linesEntered));
+            statEmpty.textContent = String(empty);
             statsPanel.hidden = false;
         };
 

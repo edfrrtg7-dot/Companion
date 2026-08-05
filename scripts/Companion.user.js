@@ -6631,6 +6631,8 @@ Final message count: ${finalMessageCount}`
     font-family: var(--ab-font);
     font-size: 13px;
     line-height: 1.5;
+    white-space: pre;
+    overflow-x: auto;
     box-sizing: border-box;
     resize: none;
     outline: none;
@@ -6748,7 +6750,8 @@ Final message count: ${finalMessageCount}`
                         <div class="ab-import-gutter" id="ab-import-gutter">
                             <div class="ab-import-gutter-numbers" id="ab-import-gutter-numbers">1</div>
                         </div>
-                        <textarea class="ab-import-textarea" id="ab-import-textarea" 
+                        <textarea class="ab-import-textarea" id="ab-import-textarea"
+                            wrap="off"
                             placeholder="Snippet 1
 Snippet 2
 Snippet 3
@@ -6796,10 +6799,15 @@ Snippet 3
       const updateStats = () => {
         const rawLines = textarea.value.split(/\r?\n/);
         const { linesEntered, unique, duplicatesSkipped } = CrmService.normalizeSnippets(rawLines);
+        let lastMeaningful = rawLines.length;
+        while (lastMeaningful > 0 && rawLines[lastMeaningful - 1].trim().length === 0) {
+          lastMeaningful--;
+        }
+        const empty = Math.max(0, lastMeaningful - linesEntered);
         statLines.textContent = String(linesEntered);
         statUnique.textContent = String(unique.length);
         statDuplicates.textContent = String(duplicatesSkipped);
-        statEmpty.textContent = String(Math.max(0, rawLines.length - linesEntered));
+        statEmpty.textContent = String(empty);
         statsPanel.hidden = false;
       };
       const syncGutterScroll = () => {
