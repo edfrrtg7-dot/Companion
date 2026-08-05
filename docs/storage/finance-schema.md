@@ -99,8 +99,9 @@
   - `EmailRead` — Email read by lady
   - `TextChat` — Text chat session
   - `VideoChat` — Video chat session
-  - `TextChatBonusCoins` — Bonus coins for text chat (sum is `0.0`)
-  - `TextChatSatellite` — Satellite text chat session
+   - `TextChatBonusCoins` — Bonus coins for text chat (sum is `0.0`)
+   - `VideoChatBonusCoins` — Bonus coins for video chat (server-provided sum)
+   - `TextChatSatellite` — Satellite text chat session
   - `EmailSendSatellite` — Satellite email sent to lady (accepted by the mapper; not observed in the reference capture)
   - `VideoChatSatellite` — Satellite video chat session
 - **Nullable:** No
@@ -111,7 +112,7 @@
 - **Type:** `boolean`
 - **Description:** Indicates if the chat session completed
 - **Present on:** Chat-type operations (`TextChat`, `VideoChat`, `TextChatSatellite`, `VideoChatSatellite`)
-- **Not present on:** Email operations (`EmailSend`, `EmailRead`) and bonus operations (`TextChatBonusCoins`)
+- **Not present on:** Email operations (`EmailSend`, `EmailRead`) and bonus operations (`TextChatBonusCoins`, `VideoChatBonusCoins`)
 - **Nullable:** No (when present, always `true`)
 
 ## Pagination
@@ -143,7 +144,8 @@ There is **no pagination**. The server returns all transactions for the requeste
 | `TextChatSatellite` | Present | 0.3 | Satellite text chat |
 | `VideoChatSatellite` | Present | Server-provided | Satellite video chat session |
 | `EmailSendSatellite` | Expected Absent | UNKNOWN | Satellite email sent (mapper-supported; not observed in reference capture) |
-| `TextChatBonusCoins` | Absent | 0.0 | Bonus coins (free) |
+| `TextChatBonusCoins` | Absent | 0.0 | Bonus coins for text chat (free) |
+| `VideoChatBonusCoins` | Absent | Server-provided | Bonus coins for video chat |
 
 ## Response Size
 

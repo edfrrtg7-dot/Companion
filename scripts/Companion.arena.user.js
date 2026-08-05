@@ -1442,6 +1442,7 @@
     Operation2["TextChat"] = "TextChat";
     Operation2["VideoChat"] = "VideoChat";
     Operation2["TextChatBonusCoins"] = "TextChatBonusCoins";
+    Operation2["VideoChatBonusCoins"] = "VideoChatBonusCoins";
     Operation2["TextChatSatellite"] = "TextChatSatellite";
     Operation2["EmailSendSatellite"] = "EmailSendSatellite";
     Operation2["VideoChatSatellite"] = "VideoChatSatellite";

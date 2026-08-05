@@ -48,6 +48,7 @@ export enum Operation {
     TextChat = "TextChat",
     VideoChat = "VideoChat",
     TextChatBonusCoins = "TextChatBonusCoins",
+    VideoChatBonusCoins = "VideoChatBonusCoins",
     TextChatSatellite = "TextChatSatellite",
     EmailSendSatellite = "EmailSendSatellite",
     VideoChatSatellite = "VideoChatSatellite",
