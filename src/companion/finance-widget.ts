@@ -84,12 +84,24 @@ export class FinanceWidget extends CompanionWindow {
     private readonly controller: FinanceController;
     private readonly unsubscribe: () => void;
     private txContainerEl: HTMLDivElement | null = null;
-    private cashDotEl: HTMLSpanElement | null = null;
     private cashRefreshEl: HTMLSpanElement | null = null;
     private cashIndicatorEl: HTMLElement | null = null;
+    private newTxIndicatorEl: HTMLElement | null = null;
     private shiftBtn: HTMLButtonElement | null = null;
     private shiftDropdown: HTMLDivElement | null = null;
     private boundHeaderDblClick: ((e: MouseEvent) => void) | null = null;
+
+    /** Monotonic id of the latest user-triggered CASH refresh. */
+    private manualRefreshSeq = 0;
+
+    /** Number of loading states observed; used to detect superseded refreshes. */
+    private loadingCount = 0;
+
+    /** Date+shift key of the last successful loaded render. */
+    private lastLoadedKey: string | null = null;
+
+    /** Transaction identities of the last successful loaded render (filtered). */
+    private lastLoadedIds: Set<string> = new Set();
 
     /** Currently displayed transaction identity keys in order. */
     private displayedTxIds: string[] = [];
@@ -173,9 +185,9 @@ export class FinanceWidget extends CompanionWindow {
         }
 
         this.txContainerEl = null;
-        this.cashDotEl = null;
         this.cashRefreshEl = null;
         this.cashIndicatorEl = null;
+        this.newTxIndicatorEl = null;
         this.shiftBtn = null;
         this.shiftDropdown = null;
         this.txRowCache.clear();
@@ -352,9 +364,9 @@ export class FinanceWidget extends CompanionWindow {
             this.createRoot();
         }
 
-        this.updateCashIndicator(state);
         this.updateCashRefreshIndicator(state.status);
         this.updateShiftButton(state.shift);
+        this.updateNewTxIndicator(state);
         if (!this.win.collapsed) {
             if (isDevMode()) {
                 diag("[FinanceWidget] render() - not collapsed, calling updateContent()");
@@ -444,36 +456,26 @@ export class FinanceWidget extends CompanionWindow {
         cashRefresh.textContent = "\u27F3";
         this.cashRefreshEl = cashRefresh;
 
-        const cashDot = document.createElement("span");
-        cashDot.className = `${this.classPrefix}-cash-dot`;
-        cashDot.textContent = "\u25CF";
-        this.cashDotEl = cashDot;
-
         cashIndicator.appendChild(cashIcon);
         cashIndicator.appendChild(cashLabel);
         cashIndicator.appendChild(cashRefresh);
-        cashIndicator.appendChild(cashDot);
+
+        // New-transaction indicator — hidden by default, shown only when a
+        // manual CASH refresh finds at least one new transaction identity.
+        const newTxIndicator = document.createElement("span");
+        newTxIndicator.className = `${this.classPrefix}-new-indicator`;
+        newTxIndicator.title = "New transaction";
+        newTxIndicator.setAttribute("aria-label", "New transaction");
+        newTxIndicator.textContent = "\u0021";
+        this.newTxIndicatorEl = newTxIndicator;
 
         // Header actions
         const actions = document.createElement("div");
         actions.className = `${this.classPrefix}-header-actions`;
 
-        // Shift selector
-        const shiftBtn = document.createElement("button");
-        shiftBtn.className = `${this.classPrefix}-shift-btn`;
-        shiftBtn.title = "Shift";
-
-        const shiftDropdown = document.createElement("div");
-        shiftDropdown.className = `${this.classPrefix}-shift-dropdown`;
-
-        for (const def of FinanceShift.getAllDefinitions()) {
-            const option = document.createElement("button");
-            option.className = `${this.classPrefix}-shift-option`;
-            option.dataset.shift = def.type;
-            option.innerHTML = `<span class="${this.classPrefix}-shift-name">${def.label}</span><span class="${this.classPrefix}-shift-time">${def.timeDisplay}</span>`;
-            option.addEventListener("click", this.onShiftSelect);
-            shiftDropdown.appendChild(option);
-        }
+        // Flexible empty drag surface — expands to consume remaining width.
+        const headerSpacer = document.createElement("div");
+        headerSpacer.className = `${this.classPrefix}-header-spacer`;
 
         // Collapse button
         const collapseBtn = document.createElement("button");
@@ -487,13 +489,13 @@ export class FinanceWidget extends CompanionWindow {
         closeBtn.title = "Close";
         closeBtn.textContent = "\u2715";
 
-        actions.appendChild(shiftBtn);
-        actions.appendChild(shiftDropdown);
         actions.appendChild(collapseBtn);
         actions.appendChild(closeBtn);
 
         dragHandle.appendChild(title);
         dragHandle.appendChild(cashIndicator);
+        dragHandle.appendChild(newTxIndicator);
+        dragHandle.appendChild(headerSpacer);
         dragHandle.appendChild(actions);
 
         // Content
@@ -516,14 +518,11 @@ export class FinanceWidget extends CompanionWindow {
         this.contentEl = content;
         this.collapseBtn = collapseBtn;
         this.closeBtn = closeBtn;
-        this.cashDotEl = cashDot;
         this.cashIndicatorEl = cashIndicator;
-        this.shiftBtn = shiftBtn;
-        this.shiftDropdown = shiftDropdown;
+        this.newTxIndicatorEl = newTxIndicator;
 
         // Attach Finance-specific event listeners
         cashIndicator.addEventListener("click", this.onHeaderRefreshClick);
-        shiftBtn.addEventListener("click", this.onShiftToggle);
 
         // Header double-click to toggle collapse/expand (Part B)
         this.boundHeaderDblClick = this.onHeaderDblClick.bind(this);
@@ -540,12 +539,6 @@ export class FinanceWidget extends CompanionWindow {
     // -------------------------------------------------------------------------
     // State-based rendering
     // -------------------------------------------------------------------------
-
-    private updateCashIndicator(state: FinanceState): void {
-        if (!this.cashDotEl) return;
-        const hasUnviewed = state.unviewedTransactions > 0;
-        this.cashDotEl.classList.toggle("pulse", hasUnviewed);
-    }
 
     private updateCashRefreshIndicator(status: FinanceStatus): void {
         if (!this.cashIndicatorEl || !this.cashRefreshEl) return;
@@ -570,6 +563,36 @@ export class FinanceWidget extends CompanionWindow {
         });
     }
 
+    /** Build the shift selector (button + dropdown) used inside the body. */
+    private createShiftSelector(): HTMLDivElement {
+        const select = document.createElement("div");
+        select.className = `${this.classPrefix}-shift-select`;
+
+        const shiftBtn = document.createElement("button");
+        shiftBtn.className = `${this.classPrefix}-shift-btn`;
+        shiftBtn.title = "Shift";
+        shiftBtn.addEventListener("click", this.onShiftToggle);
+
+        const shiftDropdown = document.createElement("div");
+        shiftDropdown.className = `${this.classPrefix}-shift-dropdown`;
+
+        for (const def of FinanceShift.getAllDefinitions()) {
+            const option = document.createElement("button");
+            option.className = `${this.classPrefix}-shift-option`;
+            option.dataset.shift = def.type;
+            option.innerHTML = `<span class="${this.classPrefix}-shift-name">${def.label}</span><span class="${this.classPrefix}-shift-time">${def.timeDisplay}</span>`;
+            option.addEventListener("click", this.onShiftSelect);
+            shiftDropdown.appendChild(option);
+        }
+
+        this.shiftBtn = shiftBtn;
+        this.shiftDropdown = shiftDropdown;
+
+        select.appendChild(shiftBtn);
+        select.appendChild(shiftDropdown);
+        return select;
+    }
+
     private onShiftToggle = (): void => {
         if (this.destroyed || !this.shiftDropdown) return;
         const isOpen = this.shiftDropdown.classList.contains("open");
@@ -590,6 +613,84 @@ export class FinanceWidget extends CompanionWindow {
         }
         this.controller.setShift(shift);
     };
+
+    // -------------------------------------------------------------------------
+    // New-transaction indicator
+    // -------------------------------------------------------------------------
+
+    /**
+     * Snapshot key for a date+shift context. Indicator comparisons are scoped
+     * to the exact selected date + shift; a change in either resets the
+     * baseline and hides the indicator.
+     */
+    private snapshotKey(state: FinanceState): string {
+        return `${state.from.getTime()}|${state.to.getTime()}|${state.shift}`;
+    }
+
+    /**
+     * Evaluate the new-transaction indicator from a state change.
+     *
+     * Rules:
+     * - Hidden by default, on initial load, on automatic refresh, and on
+     *   date/shift change.
+     * - The first successful load for a date+shift establishes the baseline
+     *   (no indicator).
+     * - A user-triggered CASH refresh compares the new filtered identity set
+     *   against the previous successful snapshot for the same date+shift.
+     * - Shows only when a new transaction identity appears; reordering existing
+     *   transactions is not "new".
+     * - Failed, cancelled, stale, or aborted refreshes never show it.
+     */
+    private updateNewTxIndicator(state: FinanceState): void {
+        if (!this.newTxIndicatorEl) return;
+
+        if (state.status === "loading") {
+            // Each refresh emits exactly one loading state; counting lets the
+            // manual-refresh completion detect when it was superseded.
+            this.loadingCount++;
+            return;
+        }
+
+        const key = this.snapshotKey(state);
+
+        // Date or shift changed since the last successful snapshot: hide the
+        // indicator and reset the baseline so it never carries across a
+        // date/shift change and comparisons never cross contexts.
+        if (this.lastLoadedKey !== null && key !== this.lastLoadedKey) {
+            this.lastLoadedKey = key;
+            this.lastLoadedIds = new Set();
+            this.hideNewTxIndicator();
+        }
+
+        if (state.status !== "loaded") return;
+
+        const filtered = FinanceShift.filterByShiftSmart(state.data?.list ?? [], state.shift).filtered;
+        const currentIds = new Set(filtered.map((tx) => txIdentity(tx)));
+
+        // First successful load for this date+shift: establishes the baseline.
+        if (this.lastLoadedKey === null) {
+            this.lastLoadedKey = key;
+            this.lastLoadedIds = currentIds;
+            this.hideNewTxIndicator();
+            return;
+        }
+
+        // Any non-manual refresh for the same date+shift: update the baseline
+        // but never reveal the indicator.
+        this.lastLoadedIds = currentIds;
+    }
+
+    private showNewTxIndicator(): void {
+        if (this.newTxIndicatorEl) {
+            this.newTxIndicatorEl.classList.add("visible");
+        }
+    }
+
+    private hideNewTxIndicator(): void {
+        if (this.newTxIndicatorEl) {
+            this.newTxIndicatorEl.classList.remove("visible");
+        }
+    }
 
     private updateContent(state: FinanceState): void {
         if (isDevMode()) {
@@ -714,19 +815,25 @@ export class FinanceWidget extends CompanionWindow {
         row1.appendChild(label1);
         row1.appendChild(value1);
 
-        const row2 = document.createElement("div");
-        row2.className = `${this.classPrefix}-shift-info-row`;
-        const label2 = document.createElement("span");
-        label2.className = `${this.classPrefix}-label`;
-        label2.textContent = "Shift:";
-        const value2 = document.createElement("span");
-        value2.className = `${this.classPrefix}-value ${this.classPrefix}-accent`;
-        value2.textContent = `${def.label} (${def.timeDisplay})`;
-        row2.appendChild(label2);
-        row2.appendChild(value2);
-
         shiftInfo.appendChild(row1);
-        shiftInfo.appendChild(row2);
+
+        // Shift selector — lives in the expanded body, near the date/shift info.
+        const select = this.createShiftSelector();
+        shiftInfo.appendChild(select);
+
+        const rowShiftTime = document.createElement("div");
+        rowShiftTime.className = `${this.classPrefix}-shift-info-row`;
+        const labelShift = document.createElement("span");
+        labelShift.className = `${this.classPrefix}-label`;
+        labelShift.textContent = "Shift:";
+        const valueShift = document.createElement("span");
+        valueShift.className = `${this.classPrefix}-value ${this.classPrefix}-shift-time-range`;
+        valueShift.textContent = `${def.label} (${def.timeDisplay})`;
+        rowShiftTime.appendChild(labelShift);
+        rowShiftTime.appendChild(valueShift);
+        shiftInfo.appendChild(rowShiftTime);
+
+        this.updateShiftButton(shift);
 
         const divider1 = document.createElement("div");
         divider1.className = `${this.classPrefix}-divider`;
@@ -908,6 +1015,7 @@ this.contentEl.appendChild(errorEl);
         const classPrefix = this.classPrefix;
         const isInteractiveTarget =
             target.closest(`.${classPrefix}-cash-indicator`) !== null ||
+            target.closest(`.${classPrefix}-new-indicator`) !== null ||
             target.closest(`.${classPrefix}-shift-btn`) !== null ||
             target.closest(`.${classPrefix}-shift-dropdown`) !== null ||
             target.closest(`.${classPrefix}-collapse-btn`) !== null ||
@@ -922,6 +1030,41 @@ this.contentEl.appendChild(errorEl);
         if (isDevMode()) diag("[FinanceWidget] onHeaderRefreshClick()");
         if (this.destroyed) return;
         if (this.controller.isLoading) return;
-        this.controller.refresh();
+
+        // Clear the previous indicator at the start of a manual refresh.
+        this.hideNewTxIndicator();
+
+        const manualId = ++this.manualRefreshSeq;
+        const prevKey = this.lastLoadedKey;
+        const prevIds = new Set(this.lastLoadedIds);
+
+        void this.controller.refresh().then(() => {
+            if (this.destroyed || manualId !== this.manualRefreshSeq) return;
+            // The manual refresh's 'loading' was emitted synchronously and
+            // counted into loadingCount. If loadingCount advanced beyond our
+            // generation, a newer refresh superseded this one (cancelled or
+            // stale) — never reveal the indicator in that case.
+            if (manualGen !== this.loadingCount) return;
+
+            const state = this.controller.getState();
+            // Failed, cancelled, stale, or aborted refreshes never reveal it.
+            if (state.status !== "loaded") return;
+            // First load or a date/shift change establishes/refreshes the
+            // baseline without a comparison.
+            const key = this.snapshotKey(state);
+            if (prevKey === null || key !== prevKey) return;
+
+            const filtered = FinanceShift.filterByShiftSmart(state.data?.list ?? [], state.shift).filtered;
+            const currentIds = new Set(filtered.map((tx) => txIdentity(tx)));
+            const hasNew = [...currentIds].some((id) => !prevIds.has(id));
+            if (hasNew) {
+                this.showNewTxIndicator();
+            } else {
+                this.hideNewTxIndicator();
+            }
+        });
+        // controller.refresh() emits its 'loading' state synchronously, so
+        // loadingCount now includes this manual refresh's generation.
+        const manualGen = this.loadingCount;
     };
 }

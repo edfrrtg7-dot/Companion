@@ -69,6 +69,7 @@ export const FINANCE_WIDGET_CSS = `
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: clamp(4px, 1vw, 8px);
     padding: 8px 12px;
     cursor: grab;
     border-bottom: 1px solid rgba(255,255,255,0.1);
@@ -110,7 +111,6 @@ export const FINANCE_WIDGET_CSS = `
     display: flex;
     gap: 2px;
     align-items: center;
-    position: relative;
     flex-shrink: 0;
 }
 
@@ -195,31 +195,49 @@ export const FINANCE_WIDGET_CSS = `
     animation: ab-finance-spin 0.6s linear infinite;
 }
 
-.ab-finance-cash-dot {
-    font-size: 10px;
+/* New-transaction indicator — red circle with "!", hidden by default.
+   Uses visibility (not display:none) so it never shifts header layout. */
+.ab-finance-new-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: #EF5350;
+    color: #FFFFFF;
+    font-size: 12px;
+    font-weight: 700;
     line-height: 1;
-    color: rgba(255, 215, 0, 0.4);
-    transition: color 0.3s ease;
+    visibility: hidden;
+    cursor: default;
 }
 
-.ab-finance-cash-dot.pulse {
-    color: #FFD700;
-    animation: ab-finance-gold-pulse 1.5s ease-in-out infinite;
+.ab-finance-new-indicator.visible {
+    visibility: visible;
 }
 
-@keyframes ab-finance-gold-pulse {
-    0%, 100% { opacity: 0.4; transform: scale(0.8); }
-    50% { opacity: 1; transform: scale(1.2); }
+/* Flexible empty drag surface — consumes remaining header width. */
+.ab-finance-header-spacer {
+    flex: 1 1 auto;
+    min-width: 0;
+    align-self: stretch;
 }
 
-/* Shift selector */
+/* Shift selector — lives in the expanded body, near the date/shift info */
+.ab-finance-shift-select {
+    position: relative;
+    align-self: flex-start;
+}
+
 .ab-finance-shift-btn {
-    background: none;
-    border: none;
-    color: rgba(255,255,255,0.5);
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #E0E0E0;
     cursor: pointer;
-    padding: 2px 6px;
-    border-radius: 3px;
+    padding: 4px 10px;
+    border-radius: 6px;
     font-size: 11px;
     font-weight: 500;
     transition: all 0.15s ease;
@@ -234,7 +252,7 @@ export const FINANCE_WIDGET_CSS = `
     display: none;
     position: absolute;
     top: 100%;
-    right: 0;
+    left: 0;
     margin-top: 4px;
     background: #1F2235;
     border: 1px solid rgba(255,255,255,0.1);
@@ -290,6 +308,11 @@ export const FINANCE_WIDGET_CSS = `
 .ab-finance-shift-time {
     font-size: 9px;
     opacity: 0.7;
+}
+
+.ab-finance-shift-time-range {
+    font-weight: 500;
+    color: rgba(255,255,255,0.7);
 }
 
 /* Collapse button */

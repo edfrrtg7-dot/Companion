@@ -2637,12 +2637,20 @@
       __publicField(this, "controller");
       __publicField(this, "unsubscribe");
       __publicField(this, "txContainerEl", null);
-      __publicField(this, "cashDotEl", null);
       __publicField(this, "cashRefreshEl", null);
       __publicField(this, "cashIndicatorEl", null);
+      __publicField(this, "newTxIndicatorEl", null);
       __publicField(this, "shiftBtn", null);
       __publicField(this, "shiftDropdown", null);
       __publicField(this, "boundHeaderDblClick", null);
+      /** Monotonic id of the latest user-triggered CASH refresh. */
+      __publicField(this, "manualRefreshSeq", 0);
+      /** Number of loading states observed; used to detect superseded refreshes. */
+      __publicField(this, "loadingCount", 0);
+      /** Date+shift key of the last successful loaded render. */
+      __publicField(this, "lastLoadedKey", null);
+      /** Transaction identities of the last successful loaded render (filtered). */
+      __publicField(this, "lastLoadedIds", /* @__PURE__ */ new Set());
       /** Currently displayed transaction identity keys in order. */
       __publicField(this, "displayedTxIds", []);
       /** Map of identity → row DOM element for reuse. */
@@ -2689,7 +2697,7 @@
         const target = event.target;
         if (!target) return;
         const classPrefix = this.classPrefix;
-        const isInteractiveTarget = target.closest(`.${classPrefix}-cash-indicator`) !== null || target.closest(`.${classPrefix}-shift-btn`) !== null || target.closest(`.${classPrefix}-shift-dropdown`) !== null || target.closest(`.${classPrefix}-collapse-btn`) !== null || target.closest(`.${classPrefix}-close-btn`) !== null;
+        const isInteractiveTarget = target.closest(`.${classPrefix}-cash-indicator`) !== null || target.closest(`.${classPrefix}-new-indicator`) !== null || target.closest(`.${classPrefix}-shift-btn`) !== null || target.closest(`.${classPrefix}-shift-dropdown`) !== null || target.closest(`.${classPrefix}-collapse-btn`) !== null || target.closest(`.${classPrefix}-close-btn`) !== null;
         if (isInteractiveTarget) return;
         this.toggleCollapse();
       });
@@ -2697,7 +2705,27 @@
         if (isDevMode()) diag("[FinanceWidget] onHeaderRefreshClick()");
         if (this.destroyed) return;
         if (this.controller.isLoading) return;
-        this.controller.refresh();
+        this.hideNewTxIndicator();
+        const manualId = ++this.manualRefreshSeq;
+        const prevKey = this.lastLoadedKey;
+        const prevIds = new Set(this.lastLoadedIds);
+        void this.controller.refresh().then(() => {
+          if (this.destroyed || manualId !== this.manualRefreshSeq) return;
+          if (manualGen !== this.loadingCount) return;
+          const state = this.controller.getState();
+          if (state.status !== "loaded") return;
+          const key = this.snapshotKey(state);
+          if (prevKey === null || key !== prevKey) return;
+          const filtered = FinanceShift.filterByShiftSmart(state.data?.list ?? [], state.shift).filtered;
+          const currentIds = new Set(filtered.map((tx) => txIdentity(tx)));
+          const hasNew = [...currentIds].some((id) => !prevIds.has(id));
+          if (hasNew) {
+            this.showNewTxIndicator();
+          } else {
+            this.hideNewTxIndicator();
+          }
+        });
+        const manualGen = this.loadingCount;
       });
       this.win = {
         ...this.win,
@@ -2739,9 +2767,9 @@
         this.boundHeaderDblClick = null;
       }
       this.txContainerEl = null;
-      this.cashDotEl = null;
       this.cashRefreshEl = null;
       this.cashIndicatorEl = null;
+      this.newTxIndicatorEl = null;
       this.shiftBtn = null;
       this.shiftDropdown = null;
       this.txRowCache.clear();
@@ -2878,9 +2906,9 @@
         }
         this.createRoot();
       }
-      this.updateCashIndicator(state);
       this.updateCashRefreshIndicator(state.status);
       this.updateShiftButton(state.shift);
+      this.updateNewTxIndicator(state);
       if (!this.win.collapsed) {
         if (isDevMode()) {
           diag("[FinanceWidget] render() - not collapsed, calling updateContent()");
@@ -2948,29 +2976,19 @@
       cashRefresh.className = `${this.classPrefix}-cash-refresh`;
       cashRefresh.textContent = "\u27F3";
       this.cashRefreshEl = cashRefresh;
-      const cashDot = document.createElement("span");
-      cashDot.className = `${this.classPrefix}-cash-dot`;
-      cashDot.textContent = "\u25CF";
-      this.cashDotEl = cashDot;
       cashIndicator.appendChild(cashIcon);
       cashIndicator.appendChild(cashLabel);
       cashIndicator.appendChild(cashRefresh);
-      cashIndicator.appendChild(cashDot);
+      const newTxIndicator = document.createElement("span");
+      newTxIndicator.className = `${this.classPrefix}-new-indicator`;
+      newTxIndicator.title = "New transaction";
+      newTxIndicator.setAttribute("aria-label", "New transaction");
+      newTxIndicator.textContent = "!";
+      this.newTxIndicatorEl = newTxIndicator;
       const actions = document.createElement("div");
       actions.className = `${this.classPrefix}-header-actions`;
-      const shiftBtn = document.createElement("button");
-      shiftBtn.className = `${this.classPrefix}-shift-btn`;
-      shiftBtn.title = "Shift";
-      const shiftDropdown = document.createElement("div");
-      shiftDropdown.className = `${this.classPrefix}-shift-dropdown`;
-      for (const def of FinanceShift.getAllDefinitions()) {
-        const option = document.createElement("button");
-        option.className = `${this.classPrefix}-shift-option`;
-        option.dataset.shift = def.type;
-        option.innerHTML = `<span class="${this.classPrefix}-shift-name">${def.label}</span><span class="${this.classPrefix}-shift-time">${def.timeDisplay}</span>`;
-        option.addEventListener("click", this.onShiftSelect);
-        shiftDropdown.appendChild(option);
-      }
+      const headerSpacer = document.createElement("div");
+      headerSpacer.className = `${this.classPrefix}-header-spacer`;
       const collapseBtn = document.createElement("button");
       collapseBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-collapse-btn`;
       collapseBtn.title = "Collapse";
@@ -2979,12 +2997,12 @@
       closeBtn.className = `${this.classPrefix}-btn ${this.classPrefix}-close-btn`;
       closeBtn.title = "Close";
       closeBtn.textContent = "\u2715";
-      actions.appendChild(shiftBtn);
-      actions.appendChild(shiftDropdown);
       actions.appendChild(collapseBtn);
       actions.appendChild(closeBtn);
       dragHandle.appendChild(title);
       dragHandle.appendChild(cashIndicator);
+      dragHandle.appendChild(newTxIndicator);
+      dragHandle.appendChild(headerSpacer);
       dragHandle.appendChild(actions);
       const content = document.createElement("div");
       content.className = `${this.classPrefix}-body`;
@@ -3000,12 +3018,9 @@
       this.contentEl = content;
       this.collapseBtn = collapseBtn;
       this.closeBtn = closeBtn;
-      this.cashDotEl = cashDot;
       this.cashIndicatorEl = cashIndicator;
-      this.shiftBtn = shiftBtn;
-      this.shiftDropdown = shiftDropdown;
+      this.newTxIndicatorEl = newTxIndicator;
       cashIndicator.addEventListener("click", this.onHeaderRefreshClick);
-      shiftBtn.addEventListener("click", this.onShiftToggle);
       this.boundHeaderDblClick = this.onHeaderDblClick.bind(this);
       dragHandle.addEventListener("dblclick", this.boundHeaderDblClick);
       this.container.appendChild(root);
@@ -3015,11 +3030,6 @@
     // -------------------------------------------------------------------------
     // State-based rendering
     // -------------------------------------------------------------------------
-    updateCashIndicator(state) {
-      if (!this.cashDotEl) return;
-      const hasUnviewed = state.unviewedTransactions > 0;
-      this.cashDotEl.classList.toggle("pulse", hasUnviewed);
-    }
     updateCashRefreshIndicator(status) {
       if (!this.cashIndicatorEl || !this.cashRefreshEl) return;
       const isLoading = status === "loading";
@@ -3039,6 +3049,88 @@
           htmlOpt.classList.remove("active");
         }
       });
+    }
+    /** Build the shift selector (button + dropdown) used inside the body. */
+    createShiftSelector() {
+      const select = document.createElement("div");
+      select.className = `${this.classPrefix}-shift-select`;
+      const shiftBtn = document.createElement("button");
+      shiftBtn.className = `${this.classPrefix}-shift-btn`;
+      shiftBtn.title = "Shift";
+      shiftBtn.addEventListener("click", this.onShiftToggle);
+      const shiftDropdown = document.createElement("div");
+      shiftDropdown.className = `${this.classPrefix}-shift-dropdown`;
+      for (const def of FinanceShift.getAllDefinitions()) {
+        const option = document.createElement("button");
+        option.className = `${this.classPrefix}-shift-option`;
+        option.dataset.shift = def.type;
+        option.innerHTML = `<span class="${this.classPrefix}-shift-name">${def.label}</span><span class="${this.classPrefix}-shift-time">${def.timeDisplay}</span>`;
+        option.addEventListener("click", this.onShiftSelect);
+        shiftDropdown.appendChild(option);
+      }
+      this.shiftBtn = shiftBtn;
+      this.shiftDropdown = shiftDropdown;
+      select.appendChild(shiftBtn);
+      select.appendChild(shiftDropdown);
+      return select;
+    }
+    // -------------------------------------------------------------------------
+    // New-transaction indicator
+    // -------------------------------------------------------------------------
+    /**
+     * Snapshot key for a date+shift context. Indicator comparisons are scoped
+     * to the exact selected date + shift; a change in either resets the
+     * baseline and hides the indicator.
+     */
+    snapshotKey(state) {
+      return `${state.from.getTime()}|${state.to.getTime()}|${state.shift}`;
+    }
+    /**
+     * Evaluate the new-transaction indicator from a state change.
+     *
+     * Rules:
+     * - Hidden by default, on initial load, on automatic refresh, and on
+     *   date/shift change.
+     * - The first successful load for a date+shift establishes the baseline
+     *   (no indicator).
+     * - A user-triggered CASH refresh compares the new filtered identity set
+     *   against the previous successful snapshot for the same date+shift.
+     * - Shows only when a new transaction identity appears; reordering existing
+     *   transactions is not "new".
+     * - Failed, cancelled, stale, or aborted refreshes never show it.
+     */
+    updateNewTxIndicator(state) {
+      if (!this.newTxIndicatorEl) return;
+      if (state.status === "loading") {
+        this.loadingCount++;
+        return;
+      }
+      const key = this.snapshotKey(state);
+      if (this.lastLoadedKey !== null && key !== this.lastLoadedKey) {
+        this.lastLoadedKey = key;
+        this.lastLoadedIds = /* @__PURE__ */ new Set();
+        this.hideNewTxIndicator();
+      }
+      if (state.status !== "loaded") return;
+      const filtered = FinanceShift.filterByShiftSmart(state.data?.list ?? [], state.shift).filtered;
+      const currentIds = new Set(filtered.map((tx) => txIdentity(tx)));
+      if (this.lastLoadedKey === null) {
+        this.lastLoadedKey = key;
+        this.lastLoadedIds = currentIds;
+        this.hideNewTxIndicator();
+        return;
+      }
+      this.lastLoadedIds = currentIds;
+    }
+    showNewTxIndicator() {
+      if (this.newTxIndicatorEl) {
+        this.newTxIndicatorEl.classList.add("visible");
+      }
+    }
+    hideNewTxIndicator() {
+      if (this.newTxIndicatorEl) {
+        this.newTxIndicatorEl.classList.remove("visible");
+      }
     }
     updateContent(state) {
       if (isDevMode()) {
@@ -3135,18 +3227,21 @@
       value1.textContent = FinanceShift.formatDate(/* @__PURE__ */ new Date());
       row1.appendChild(label1);
       row1.appendChild(value1);
-      const row2 = document.createElement("div");
-      row2.className = `${this.classPrefix}-shift-info-row`;
-      const label2 = document.createElement("span");
-      label2.className = `${this.classPrefix}-label`;
-      label2.textContent = "Shift:";
-      const value2 = document.createElement("span");
-      value2.className = `${this.classPrefix}-value ${this.classPrefix}-accent`;
-      value2.textContent = `${def.label} (${def.timeDisplay})`;
-      row2.appendChild(label2);
-      row2.appendChild(value2);
       shiftInfo.appendChild(row1);
-      shiftInfo.appendChild(row2);
+      const select = this.createShiftSelector();
+      shiftInfo.appendChild(select);
+      const rowShiftTime = document.createElement("div");
+      rowShiftTime.className = `${this.classPrefix}-shift-info-row`;
+      const labelShift = document.createElement("span");
+      labelShift.className = `${this.classPrefix}-label`;
+      labelShift.textContent = "Shift:";
+      const valueShift = document.createElement("span");
+      valueShift.className = `${this.classPrefix}-value ${this.classPrefix}-shift-time-range`;
+      valueShift.textContent = `${def.label} (${def.timeDisplay})`;
+      rowShiftTime.appendChild(labelShift);
+      rowShiftTime.appendChild(valueShift);
+      shiftInfo.appendChild(rowShiftTime);
+      this.updateShiftButton(shift);
       const divider1 = document.createElement("div");
       divider1.className = `${this.classPrefix}-divider`;
       const creditsRow = document.createElement("div");
@@ -3388,6 +3483,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: clamp(4px, 1vw, 8px);
     padding: 8px 12px;
     cursor: grab;
     border-bottom: 1px solid rgba(255,255,255,0.1);
@@ -3429,7 +3525,6 @@
     display: flex;
     gap: 2px;
     align-items: center;
-    position: relative;
     flex-shrink: 0;
 }
 
@@ -3514,31 +3609,49 @@
     animation: ab-finance-spin 0.6s linear infinite;
 }
 
-.ab-finance-cash-dot {
-    font-size: 10px;
+/* New-transaction indicator \u2014 red circle with "!", hidden by default.
+   Uses visibility (not display:none) so it never shifts header layout. */
+.ab-finance-new-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: #EF5350;
+    color: #FFFFFF;
+    font-size: 12px;
+    font-weight: 700;
     line-height: 1;
-    color: rgba(255, 215, 0, 0.4);
-    transition: color 0.3s ease;
+    visibility: hidden;
+    cursor: default;
 }
 
-.ab-finance-cash-dot.pulse {
-    color: #FFD700;
-    animation: ab-finance-gold-pulse 1.5s ease-in-out infinite;
+.ab-finance-new-indicator.visible {
+    visibility: visible;
 }
 
-@keyframes ab-finance-gold-pulse {
-    0%, 100% { opacity: 0.4; transform: scale(0.8); }
-    50% { opacity: 1; transform: scale(1.2); }
+/* Flexible empty drag surface \u2014 consumes remaining header width. */
+.ab-finance-header-spacer {
+    flex: 1 1 auto;
+    min-width: 0;
+    align-self: stretch;
 }
 
-/* Shift selector */
+/* Shift selector \u2014 lives in the expanded body, near the date/shift info */
+.ab-finance-shift-select {
+    position: relative;
+    align-self: flex-start;
+}
+
 .ab-finance-shift-btn {
-    background: none;
-    border: none;
-    color: rgba(255,255,255,0.5);
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #E0E0E0;
     cursor: pointer;
-    padding: 2px 6px;
-    border-radius: 3px;
+    padding: 4px 10px;
+    border-radius: 6px;
     font-size: 11px;
     font-weight: 500;
     transition: all 0.15s ease;
@@ -3553,7 +3666,7 @@
     display: none;
     position: absolute;
     top: 100%;
-    right: 0;
+    left: 0;
     margin-top: 4px;
     background: #1F2235;
     border: 1px solid rgba(255,255,255,0.1);
@@ -3609,6 +3722,11 @@
 .ab-finance-shift-time {
     font-size: 9px;
     opacity: 0.7;
+}
+
+.ab-finance-shift-time-range {
+    font-weight: 500;
+    color: rgba(255,255,255,0.7);
 }
 
 /* Collapse button */
