@@ -5985,7 +5985,7 @@ Final message count: ${finalMessageCount}`
   var DASHBOARD_FIELDS = [
     { label: "IceBreaker Status", path: "data.status", isStatus: true },
     { label: "Broadcast Status", path: "data.broadcast.status", isStatus: true },
-    { label: "IceBreaker In Progress", path: "data.sended" },
+    { label: "IceBreaker Progress", path: "data.chainProgress" },
     { label: "IceBreaker Completed", path: "data.delivered" },
     { label: "Broadcast In Progress", path: "data.broadcast.chainProgress" },
     { label: "Broadcast Completed", path: "data.broadcast.sended" }
@@ -6002,9 +6002,9 @@ Final message count: ${finalMessageCount}`
       if (field.path === "data.broadcast.status") {
         return String(data?.broadcast?.status ?? "Unknown");
       }
-      if (field.path === "data.sended") {
-        const s = data?.sended;
-        return typeof s === "string" ? String(s.split(";").filter(Boolean).length) : "0";
+      if (field.path === "data.chainProgress") {
+        const cp = data?.chainProgress;
+        return cp && typeof cp === "object" ? String(Object.keys(cp).length) : "0";
       }
       if (field.path === "data.delivered") {
         const d = data?.delivered;
