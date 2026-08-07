@@ -29,8 +29,8 @@ const STATUS_FIELDS = new Set(["data.status", "data.broadcast.status"]);
 const DASHBOARD_FIELDS: readonly DashboardField[] = [
     { label: "IceBreaker Status", path: "data.status", isStatus: true },
     { label: "Broadcast Status", path: "data.broadcast.status", isStatus: true },
-    { label: "IceBreaker In Progress", path: "data.chainProgress" },
-    { label: "IceBreaker Completed", path: "data.sended" },
+    { label: "IceBreaker In Progress", path: "data.sended" },
+    { label: "IceBreaker Completed", path: "data.delivered" },
     { label: "Broadcast In Progress", path: "data.broadcast.chainProgress" },
     { label: "Broadcast Completed", path: "data.broadcast.sended" },
 ];
@@ -52,13 +52,13 @@ function resolveField(data: Record<string, unknown>, field: DashboardField): str
         if (field.path === "data.broadcast.status") {
             return String((data as any)?.broadcast?.status ?? "Unknown");
         }
-        if (field.path === "data.chainProgress") {
-            const cp = (data as any)?.chainProgress;
-            return cp && typeof cp === "object" ? String(Object.keys(cp).length) : "0";
-        }
         if (field.path === "data.sended") {
             const s = (data as any)?.sended;
             return typeof s === "string" ? String(s.split(";").filter(Boolean).length) : "0";
+        }
+        if (field.path === "data.delivered") {
+            const d = (data as any)?.delivered;
+            return typeof d === "string" ? String(d.split(";").filter(Boolean).length) : "0";
         }
         if (field.path === "data.broadcast.chainProgress") {
             const cp = (data as any)?.broadcast?.chainProgress;
