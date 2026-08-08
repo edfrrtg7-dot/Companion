@@ -129,13 +129,15 @@ Snippet 3
                     <div class="ab-import-stats" id="ab-import-stats" hidden>
                         <div class="ab-import-stats-title">Detected snippets</div>
                         <div class="ab-import-stats-grid">
-                            <span class="ab-import-stat-label">Lines</span>
+                            <span class="ab-import-stat-label">Editor rows</span>
+                            <span class="ab-import-stat-value" id="ab-import-stat-editor-rows">0</span>
+                            <span class="ab-import-stat-label">Importable</span>
                             <span class="ab-import-stat-value" id="ab-import-stat-lines">0</span>
                             <span class="ab-import-stat-label">Unique</span>
                             <span class="ab-import-stat-value" id="ab-import-stat-unique">0</span>
                             <span class="ab-import-stat-label">Duplicates</span>
                             <span class="ab-import-stat-value" id="ab-import-stat-duplicates">0</span>
-                            <span class="ab-import-stat-label">Empty</span>
+                            <span class="ab-import-stat-label">Empty rows</span>
                             <span class="ab-import-stat-value" id="ab-import-stat-empty">0</span>
                         </div>
                     </div>
@@ -156,12 +158,13 @@ Snippet 3
         const statUnique = document.getElementById("ab-import-stat-unique") as HTMLSpanElement;
         const statDuplicates = document.getElementById("ab-import-stat-duplicates") as HTMLSpanElement;
         const statEmpty = document.getElementById("ab-import-stat-empty") as HTMLSpanElement;
+        const statEditorRows = document.getElementById("ab-import-stat-editor-rows") as HTMLSpanElement;
         textarea.focus();
 
         const updateLineNumbers = (): void => {
             const count = Math.max(1, textarea.value.split("\n").length);
             gutterNumbers.textContent = Array.from({ length: count }, (_, i) => String(i + 1)).join("\n");
-            gutterNumbers.style.transform = "translateY(0px)";
+            gutterNumbers.style.transform = `translateY(${-textarea.scrollTop}px)`;
             if (errorBox.hidden === false) {
                 errorBox.hidden = true;
                 editor.classList.remove("ab-import-editor-error");
@@ -172,8 +175,10 @@ Snippet 3
          * Live import preview — reuses the exact importer pipeline
          * (CrmService.normalizeSnippets), so the statistics always match the
          * actual import result. Pure preview: no import, no profile, no storage.
-         * Lines = non-empty trimmed lines (as the importer counts "Lines
-         * entered"); Empty = empty lines between meaningful lines. Trailing
+         * Editor rows = raw logical rows of the textarea (matches the gutter's
+         * last number, including the trailing row produced by a final newline);
+         * Importable = non-empty trimmed lines (as the importer counts "Lines
+         * entered"); Empty rows = empty lines between meaningful lines. Trailing
          * empty/whitespace-only lines after the last meaningful line are
          * treated as file-structure whitespace and ignored (a final newline
          * is not a blank snippet row).
@@ -186,6 +191,7 @@ Snippet 3
                 lastMeaningful--;
             }
             const empty = Math.max(0, lastMeaningful - linesEntered);
+            statEditorRows.textContent = String(rawLines.length);
             statLines.textContent = String(linesEntered);
             statUnique.textContent = String(unique.length);
             statDuplicates.textContent = String(duplicatesSkipped);
