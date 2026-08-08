@@ -514,6 +514,8 @@ export const COMPANION_STYLES_CSS = `
 /* Textarea with line-number gutter */
 .ab-import-editor {
     display: flex;
+    height: 282px;
+    flex-shrink: 0;
     border: 1px solid var(--ab-border);
     border-radius: 10px;
     overflow: hidden;
@@ -550,7 +552,8 @@ export const COMPANION_STYLES_CSS = `
 
 .ab-import-textarea {
     width: 100%;
-    min-height: 260px;
+    height: 100%;
+    min-height: 0;
     padding: 14px;
     border: none;
     background: var(--ab-bg-card);
